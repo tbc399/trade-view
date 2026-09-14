@@ -2,12 +2,25 @@ from functools import lru_cache
 from decimal import Decimal
 
 from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return init_settings, dotenv_settings, env_settings, file_secret_settings
+
+    username: str = Field(default="", validation_alias="USERNAME")
+    password_hash: SecretStr = Field(default=SecretStr(""), validation_alias="PASSWORD")
     account_id: str = Field(default="", validation_alias="TRADIER_ACCOUNT_ID")
     api_token: SecretStr = Field(default=SecretStr(""), validation_alias="TRADIER_API_TOKEN")
     base_url: str = Field(default="https://api.tradier.com/v1", validation_alias="TRADIER_BASE_URL")
@@ -24,6 +37,10 @@ class Settings(BaseSettings):
     @property
     def has_tradier_token(self) -> bool:
         return bool(self.api_token.get_secret_value())
+
+    @property
+    def has_login_credentials(self) -> bool:
+        return bool(self.username and self.password_hash.get_secret_value())
 
 
 @lru_cache

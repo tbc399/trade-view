@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Login | Trade View</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+      (() => {
+        const key = "trade-view-theme";
+        const isTheme = (value) => value === "light" || value === "dark";
+        const systemTheme = () => window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+
+        let storedTheme = null;
+        try {
+          storedTheme = localStorage.getItem(key);
+        } catch {
+          storedTheme = null;
+        }
+
+        document.documentElement.dataset.theme = isTheme(storedTheme) ? storedTheme : systemTheme();
+      })();
+    </script>
+    <link href="{{ url_for('static', path='/styles.css') }}" rel="stylesheet">
+  </head>
+  <body class="min-h-screen bg-base-200 text-base-content">
+    <main class="flex min-h-screen items-center justify-center px-4 py-12">
+      <section class="w-full max-w-sm rounded-lg border border-base-300 bg-base-100 p-7 shadow-sm">
+        <div class="mb-7">
+          <p class="text-sm font-semibold text-base-content/55">Trade View</p>
+          <h1 class="mt-2 text-2xl font-semibold leading-tight">Sign in</h1>
+        </div>
+
+        {% if error %}
+          <div class="alert alert-error mb-4 text-sm">
+            <span>{{ error }}</span>
+          </div>
+        {% endif %}
+
+        <form method="post" action="/login" class="space-y-5">
+          <input type="hidden" name="next" value="{{ next_path }}">
+
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-base-content/70">Username</span>
+            <input
+              class="input input-bordered w-full"
+              name="username"
+              autocomplete="username"
+              autofocus
+              required
+              value="{{ username or '' }}"
+            >
+          </label>
+
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-base-content/70">Password</span>
+            <input
+              class="input input-bordered w-full"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+            >
+          </label>
+
+          <button class="btn btn-primary mt-1 w-full" type="submit">Log in</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

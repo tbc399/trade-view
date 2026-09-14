@@ -2,13 +2,21 @@ import asyncio
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from trade_view.auth import (
+    AUTH_COOKIE_NAME,
+    SESSION_TTL_SECONDS,
+    create_session_token,
+    verify_password,
+    verify_session_token,
+)
 from trade_view.config import get_settings
 from trade_view.tradier import (
     DisplayHistoricalBalancePoint,
@@ -49,6 +57,8 @@ def initial_preferences() -> AppPreferences:
 
 
 app_preferences = initial_preferences()
+
+AUTH_EXEMPT_PATHS = {"/login", "/favicon.ico"}
 
 
 NAV_ITEMS = [
@@ -232,6 +242,125 @@ def page_context(
         "placed_order": placed_order,
         "position_entry_error": position_entry_error,
     }
+
+
+def is_authenticated(request: Request) -> bool:
+    settings = get_settings()
+    if not settings.has_login_credentials:
+        return False
+
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    if not token:
+        return False
+
+    return verify_session_token(
+        token,
+        expected_username=settings.username,
+        signing_secret=settings.password_hash.get_secret_value(),
+    )
+
+
+def next_path_from_request(request: Request) -> str:
+    next_path = request.url.path
+    if request.url.query:
+        next_path = f"{next_path}?{request.url.query}"
+    return next_path
+
+
+def safe_next_path(value: str) -> str:
+    next_path = value.strip()
+    if not next_path or not next_path.startswith("/") or next_path.startswith("//"):
+        return "/"
+    return next_path
+
+
+def redirect_to_login(request: Request) -> Response:
+    login_url = f"/login?next={quote(next_path_from_request(request), safe='')}"
+    if request.headers.get("hx-request") == "true":
+        response = Response(status_code=401)
+        response.headers["HX-Redirect"] = login_url
+        return response
+    return RedirectResponse(url=login_url, status_code=303)
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    path = request.url.path
+    if path in AUTH_EXEMPT_PATHS or path.startswith("/static/"):
+        return await call_next(request)
+
+    if not is_authenticated(request):
+        return redirect_to_login(request)
+
+    return await call_next(request)
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def read_login(request: Request, next: str = "/"):
+    if is_authenticated(request):
+        return RedirectResponse(url=safe_next_path(next), status_code=303)
+
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {
+            "error": "",
+            "next_path": safe_next_path(next),
+            "username": "",
+        },
+    )
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def create_login(request: Request):
+    form = await request.form()
+    username = str(form.get("username") or "")
+    password = str(form.get("password") or "")
+    next_path = safe_next_path(str(form.get("next") or "/"))
+    settings = get_settings()
+    password_hash = settings.password_hash.get_secret_value()
+
+    if not settings.has_login_credentials:
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {
+                "error": "Login is not configured. Set USERNAME and PASSWORD in the environment.",
+                "next_path": next_path,
+                "username": username,
+            },
+            status_code=503,
+        )
+
+    if username != settings.username or not verify_password(password, password_hash):
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {
+                "error": "Invalid username or password.",
+                "next_path": next_path,
+                "username": username,
+            },
+            status_code=401,
+        )
+
+    response = RedirectResponse(url=next_path, status_code=303)
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        create_session_token(settings.username, password_hash),
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+    )
+    return response
+
+
+@app.post("/logout")
+async def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(AUTH_COOKIE_NAME, samesite="lax")
+    return response
 
 
 async def overview_context(
