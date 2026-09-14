@@ -1,31 +1,90 @@
 <section class="space-y-6">
-  <div class="hero min-h-72 overflow-hidden rounded-box border border-base-300 bg-base-100 shadow-sm">
-    <div class="hero-content w-full items-stretch justify-between gap-8 p-6 lg:p-10">
-      <div class="max-w-2xl">
-        <div class="badge badge-primary badge-outline mb-4">Server-driven trading dashboard</div>
-        <h1 class="text-3xl font-semibold leading-tight lg:text-4xl">A calm command center for watching trades take shape.</h1>
-        <p class="mt-4 max-w-xl text-base-content/70">
-          Trade View is wired for FastAPI, Jinja templates, HTMX partial updates, and DaisyUI components. The shell is ready for market data, positions, and trade review workflows.
-        </p>
-        <div class="mt-6 flex flex-wrap gap-3">
-          <button class="btn btn-primary" hx-get="/partials/watchlist" hx-target="#main-content" hx-push-url="/watchlist">
-            Open Watchlist
-          </button>
-          <button class="btn btn-outline" hx-get="/partials/positions" hx-target="#main-content" hx-push-url="/positions">
-            View Positions
-          </button>
-        </div>
-      </div>
-      <div class="hidden min-w-80 flex-col justify-between rounded-box bg-base-200 p-5 lg:flex">
-        <div class="flex items-center justify-between">
-          <span class="text-sm font-medium text-base-content/60">Session Bias</span>
-          <span class="badge badge-success">Constructive</span>
-        </div>
-        <div class="radial-progress place-self-center text-primary" style="--value:68;" aria-valuenow="68" role="progressbar">68%</div>
-        <progress class="progress progress-primary w-full" value="68" max="100"></progress>
-      </div>
+  <div class="flex flex-col gap-4 rounded-box border border-base-300 bg-base-100 p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+    <div>
+      <div class="badge badge-primary badge-outline mb-3">Tradier workspace</div>
+      <h1 class="text-3xl font-semibold">Overview</h1>
+      <p class="mt-2 max-w-2xl text-sm text-base-content/65">
+        Current positions, watchlists, and order entry defaults for the account-backed workflow.
+      </p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <button class="btn btn-primary" hx-get="/partials/positions" hx-target="#main-content" hx-push-url="/positions">
+        Enter Position
+      </button>
+      <button class="btn btn-outline" hx-get="/partials/watchlist" hx-target="#main-content" hx-push-url="/watchlist">
+        Watchlist
+      </button>
     </div>
   </div>
+
+  {% if positions_error or watchlists_error %}
+    <div class="grid gap-3 lg:grid-cols-2">
+      {% if positions_error %}
+        <div class="alert alert-warning border border-warning/30 shadow-sm">
+          <span>{{ positions_error }}</span>
+        </div>
+      {% endif %}
+      {% if watchlists_error %}
+        <div class="alert alert-warning border border-warning/30 shadow-sm">
+          <span>{{ watchlists_error }}</span>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <section class="card border border-base-300 bg-base-100 shadow-sm">
+    <div class="card-body gap-5">
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <h2 class="text-base font-semibold">Account Balance</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Historical total value over {{ historical_balance_period_label }}.
+          </p>
+        </div>
+
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center xl:justify-end">
+          <div class="text-left sm:text-right">
+            <div class="text-sm text-base-content/60">Return</div>
+            <div class="flex items-center gap-2 sm:justify-end">
+              <span class="font-mono text-2xl font-semibold">{{ account_return.value }}</span>
+              <span class="badge badge-outline {% if account_return.change_value >= 0 %}badge-success{% else %}badge-error{% endif %}">
+                {{ account_return.change }}
+              </span>
+            </div>
+          </div>
+
+          <div class="max-w-full overflow-x-auto">
+            <div class="join">
+              {% for option in historical_balance_period_options %}
+                <button
+                  class="btn btn-sm join-item {% if historical_balance_period == option.value %}btn-primary{% else %}btn-outline{% endif %}"
+                  hx-get="/partials/overview?period={{ option.value }}"
+                  hx-target="#main-content"
+                  hx-push-url="/?period={{ option.value }}"
+                  type="button"
+                >
+                  {{ option.label }}
+                </button>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% if historical_balance_error %}
+        <div class="alert alert-warning border border-warning/30 shadow-sm">
+          <span>{{ historical_balance_error }}</span>
+        </div>
+      {% elif historical_balance_chart_data %}
+        <div class="tv-account-balance-chart" data-account-balance-chart></div>
+        <script type="application/json" data-account-balance-chart-data>{{ historical_balance_chart_data | tojson }}</script>
+      {% else %}
+        <div class="rounded-box border border-dashed border-base-300 bg-base-200 p-5 text-sm text-base-content/65">
+          No historical balance points to chart for this period.
+        </div>
+      {% endif %}
+    </div>
+  </section>
 
   <div class="stats stats-vertical w-full border border-base-300 bg-base-100 shadow-sm lg:stats-horizontal">
     {% for stat in summary_stats %}
@@ -39,59 +98,124 @@
 
   <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
     <section class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body">
-        <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="card-body p-0">
+        <div class="flex flex-col gap-3 border-b border-base-300 px-5 py-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 class="card-title">Market Watch</h2>
-            <p class="text-sm text-base-content/60">Starter rows for the first data integration.</p>
+            <h2 class="text-base font-semibold">Positions</h2>
+            <p class="text-sm text-base-content/60">Cost basis, shares, market days, and open P&amp;L.</p>
           </div>
-          <button class="btn btn-sm btn-outline">Refresh</button>
+          <button class="btn btn-sm btn-outline" hx-get="/partials/positions" hx-target="#main-content" hx-push-url="/positions">
+            Open
+          </button>
         </div>
-        <div class="overflow-x-auto">
-          <table class="table table-zebra">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Name</th>
-                <th class="text-right">Price</th>
-                <th class="text-right">Move</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for item in watchlist %}
+
+        {% if positions %}
+          <div class="overflow-x-auto">
+            <table class="table table-zebra">
+              <thead>
                 <tr>
-                  <td><span class="font-semibold">{{ item.symbol }}</span></td>
-                  <td>{{ item.name }}</td>
-                  <td class="text-right">{{ item.price }}</td>
-                  <td class="text-right">
-                    <span class="badge {% if item.change.startswith('+') %}badge-success{% else %}badge-warning{% endif %} badge-outline">
-                      {{ item.change }}
-                    </span>
-                  </td>
+                  <th>Symbol</th>
+                  <th>Name</th>
+                  <th class="text-right">Shares</th>
+                  <th class="text-right">Market Days</th>
+                  <th class="text-right">Open P&amp;L</th>
                 </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {% for position in positions %}
+                  <tr>
+                    <td><span class="font-semibold">{{ position.symbol }}</span></td>
+                    <td>{{ position.name }}</td>
+                    <td class="text-right font-mono text-sm">{{ position.shares }}</td>
+                    <td class="text-right font-mono text-sm">{{ position.held_market_days }}</td>
+                    <td class="text-right">
+                      <div class="flex flex-col items-end gap-1">
+                        <span class="font-mono text-sm font-semibold">{{ position.pnl_dollars }}</span>
+                        <span class="badge badge-outline {% if position.pnl_value >= 0 %}badge-success{% else %}badge-error{% endif %}">
+                          {{ position.pnl_percent }}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="p-5">
+            <div class="rounded-box border border-dashed border-base-300 bg-base-200 p-5 text-sm text-base-content/65">
+              No positions to summarize.
+            </div>
+          </div>
+        {% endif %}
       </div>
     </section>
 
     <section class="space-y-4">
-      <div class="alert border border-base-300 bg-base-100 shadow-sm">
-        <span class="badge badge-info badge-outline">HTMX</span>
-        <span>Navigation swaps this content from the server without taking over the frontend.</span>
-      </div>
       <div class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
-          <h2 class="card-title">Next Build Lane</h2>
-          <div class="tabs tabs-boxed">
-            <button class="tab tab-active">Positions</button>
-            <button class="tab">Orders</button>
-            <button class="tab">Review</button>
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-base font-semibold">Order Entry</h2>
+              <p class="mt-1 text-sm text-base-content/60">Previewed market day buys with explicit submit.</p>
+            </div>
+            <span class="badge badge-success badge-outline">Preview first</span>
           </div>
-          <p class="text-sm text-base-content/65">
-            The page is intentionally plain right now: strong structure, clean margins, and a real place to connect the trading features.
-          </p>
+
+          <div class="mt-5 grid gap-3 text-sm">
+            <div class="flex items-center justify-between rounded-box border border-base-300 bg-base-200 px-3 py-2">
+              <span class="text-base-content/60">Default size</span>
+              <span class="font-mono font-semibold">{{ preferences.position_size_default_percent }}%</span>
+            </div>
+            <div class="flex items-center justify-between rounded-box border border-base-300 bg-base-200 px-3 py-2">
+              <span class="text-base-content/60">Order type</span>
+              <span class="font-mono font-semibold">Market day</span>
+            </div>
+          </div>
+
+          <div class="card-actions mt-5 justify-end">
+            <button class="btn btn-sm btn-outline" hx-get="/partials/settings" hx-target="#main-content" hx-push-url="/settings">
+              Defaults
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-base font-semibold">Watchlists</h2>
+              <p class="mt-1 text-sm text-base-content/60">Tradier lists with add-symbol support.</p>
+            </div>
+            <button class="btn btn-sm btn-outline" hx-get="/partials/watchlist" hx-target="#main-content" hx-push-url="/watchlist">
+              Open
+            </button>
+          </div>
+
+          {% if watchlists %}
+            <div class="mt-5 space-y-3">
+              {% for tradier_watchlist in watchlists %}
+                <div class="rounded-box border border-base-300 bg-base-200 p-3">
+                  <div class="flex items-center justify-between gap-3">
+                    <span class="font-medium">{{ tradier_watchlist.name }}</span>
+                    <span class="badge badge-outline">{{ tradier_watchlist.items | length }}</span>
+                  </div>
+                  {% if tradier_watchlist.items %}
+                    <div class="mt-3 flex flex-wrap gap-2">
+                      {% for item in tradier_watchlist.items[:6] %}
+                        <span class="badge badge-ghost">{{ item.symbol }}</span>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="mt-5 rounded-box border border-dashed border-base-300 bg-base-200 p-5 text-sm text-base-content/65">
+              No watchlists to summarize.
+            </div>
+          {% endif %}
         </div>
       </div>
     </section>

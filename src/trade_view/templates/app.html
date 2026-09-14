@@ -1,37 +1,56 @@
 <!doctype html>
-<html lang="en" data-theme="corporate">
+<html lang="en">
   <head>
     <title>{{ title or "Trade View" }}</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+      (() => {
+        const key = "trade-view-theme";
+        const isTheme = (value) => value === "light" || value === "dark";
+        const systemTheme = () => window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+
+        let storedTheme = null;
+        try {
+          storedTheme = localStorage.getItem(key);
+        } catch {
+          storedTheme = null;
+        }
+
+        document.documentElement.dataset.theme = isTheme(storedTheme) ? storedTheme : systemTheme();
+      })();
+    </script>
     <link href="{{ url_for('static', path='/styles.css') }}" rel="stylesheet">
     <script src="https://unpkg.com/htmx.org@2.0.10/dist/htmx.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js" defer></script>
   </head>
   <body class="min-h-screen bg-base-200 text-base-content">
-    <div class="tv-shell mx-auto grid min-h-screen grid-cols-1 gap-4 py-4 lg:grid-cols-[16rem_minmax(0,1fr)] lg:gap-5 lg:py-6">
+    <div class="tv-shell">
       <aside class="tv-sidebar">
-        <a href="/" class="btn btn-ghost justify-start px-3 text-xl font-semibold">
-          Trade View
-        </a>
-        <ul class="menu menu-md gap-1 rounded-box border border-base-300 bg-base-100 p-2 shadow-sm">
-          {% for item in nav_items %}
-            <li>
-              <a
-                class="tv-nav-link {% if active_nav == item.key %}active{% endif %}"
-                href="{{ item.path }}"
-                hx-get="{{ item.partial_path }}"
-                hx-target="#main-content"
-                hx-push-url="{{ item.path }}"
-                hx-swap="innerHTML"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="{{ item.icon }}"></path>
-                </svg>
-                <span>{{ item.label }}</span>
-              </a>
-            </li>
-          {% endfor %}
-        </ul>
+        <div class="tv-sidebar-panel rounded-box border border-base-300 bg-base-100 shadow-sm">
+          <a href="/" class="btn btn-ghost justify-start px-3 text-xl font-semibold">
+            Trade View
+          </a>
+          <ul class="menu menu-md gap-1 p-0">
+            {% for item in nav_items %}
+              <li>
+                <a
+                  class="tv-nav-link {% if active_nav == item.key %}active{% endif %}"
+                  href="{{ item.path }}"
+                  hx-get="{{ item.partial_path }}"
+                  hx-target="#main-content"
+                  hx-push-url="{{ item.path }}"
+                  hx-swap="innerHTML"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="{{ item.icon }}"></path>
+                  </svg>
+                  <span>{{ item.label }}</span>
+                </a>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
       </aside>
 
       <div class="tv-main-pane min-w-0">
@@ -64,11 +83,170 @@
     </div>
 
     <script>
+      const tradeViewTheme = (() => {
+        const key = "trade-view-theme";
+        const media = window.matchMedia("(prefers-color-scheme: dark)");
+        const systemTheme = () => media.matches ? "dark" : "light";
+        const currentTheme = () => document.documentElement.dataset.theme || systemTheme();
+        const getStoredTheme = () => {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        };
+        const setStoredTheme = (theme) => {
+          try {
+            localStorage.setItem(key, theme);
+          } catch {
+            return;
+          }
+        };
+
+        const applyTheme = (theme, persist = false) => {
+          document.documentElement.dataset.theme = theme;
+          if (persist) {
+            setStoredTheme(theme);
+          }
+          syncControls();
+        };
+
+        const syncControls = () => {
+          const theme = currentTheme();
+          document.querySelectorAll("[data-theme-toggle]").forEach((toggle) => {
+            toggle.checked = theme === "dark";
+          });
+          document.querySelectorAll("[data-theme-label]").forEach((label) => {
+            label.textContent = theme === "dark" ? "Dark" : "Light";
+          });
+        };
+
+        media.addEventListener("change", () => {
+          if (!getStoredTheme()) {
+            applyTheme(systemTheme());
+          }
+        });
+
+        document.addEventListener("change", (event) => {
+          if (!event.target.matches("[data-theme-toggle]")) return;
+          applyTheme(event.target.checked ? "dark" : "light", true);
+        });
+
+        document.body.addEventListener("htmx:afterSwap", syncControls);
+        document.addEventListener("DOMContentLoaded", syncControls);
+
+        return { syncControls };
+      })();
+
+      const tradeViewCharts = (() => {
+        const moneyFormatter = new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: "USD",
+          maximumFractionDigits: 2,
+        });
+
+        const themeColors = () => {
+          const isDark = document.documentElement.dataset.theme === "dark";
+          return {
+            axis: isDark ? "rgba(229, 231, 235, 0.58)" : "rgba(31, 41, 55, 0.58)",
+            grid: isDark ? "rgba(229, 231, 235, 0.12)" : "rgba(31, 41, 55, 0.12)",
+            tooltipBackground: isDark ? "rgba(17, 24, 39, 0.96)" : "rgba(255, 255, 255, 0.98)",
+            tooltipText: isDark ? "#f9fafb" : "#111827",
+          };
+        };
+
+        const parseChartData = (chartNode) => {
+          const dataNode = chartNode.parentElement?.querySelector("[data-account-balance-chart-data]");
+          if (!dataNode) return [];
+
+          try {
+            const parsed = JSON.parse(dataNode.textContent || "[]");
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        };
+
+        const init = (root = document) => {
+          if (!window.echarts) return;
+
+          root.querySelectorAll("[data-account-balance-chart]").forEach((chartNode) => {
+            const chartData = parseChartData(chartNode);
+            if (!chartData.length) return;
+
+            const values = chartData.map((point) => Number(point.value || 0));
+            const dates = chartData.map((point) => String(point.date || ""));
+            const isPositive = values[values.length - 1] >= values[0];
+            const lineColor = isPositive ? "#16a34a" : "#dc2626";
+            const colors = themeColors();
+            const chart = window.echarts.getInstanceByDom(chartNode) || window.echarts.init(chartNode);
+
+            chart.setOption({
+              animationDuration: 450,
+              grid: { left: 8, right: 12, top: 16, bottom: 6, containLabel: true },
+              tooltip: {
+                trigger: "axis",
+                backgroundColor: colors.tooltipBackground,
+                borderColor: colors.grid,
+                textStyle: { color: colors.tooltipText },
+                valueFormatter: (value) => moneyFormatter.format(Number(value || 0)),
+              },
+              xAxis: {
+                type: "category",
+                boundaryGap: false,
+                data: dates,
+                axisLine: { lineStyle: { color: colors.grid } },
+                axisTick: { show: false },
+                axisLabel: { color: colors.axis, hideOverlap: true },
+              },
+              yAxis: {
+                type: "value",
+                scale: true,
+                axisLabel: {
+                  color: colors.axis,
+                  formatter: (value) => moneyFormatter.format(Number(value || 0)),
+                },
+                splitLine: { lineStyle: { color: colors.grid } },
+              },
+              series: [
+                {
+                  type: "line",
+                  data: values,
+                  smooth: true,
+                  showSymbol: chartData.length <= 12,
+                  symbolSize: 6,
+                  lineStyle: { color: lineColor, width: 3 },
+                  itemStyle: { color: lineColor },
+                  areaStyle: { color: `${lineColor}1f` },
+                },
+              ],
+            });
+
+            if (!chartNode.dataset.resizeBound) {
+              window.addEventListener("resize", () => chart.resize());
+              chartNode.dataset.resizeBound = "true";
+            }
+          });
+        };
+
+        return { init };
+      })();
+
       document.body.addEventListener("htmx:beforeRequest", (event) => {
         const item = event.target.closest(".tv-nav-link");
         if (!item) return;
         document.querySelectorAll(".tv-nav-link").forEach((node) => node.classList.remove("active"));
         item.classList.add("active");
+      });
+
+      document.body.addEventListener("htmx:afterSwap", (event) => {
+        tradeViewTheme.syncControls();
+        tradeViewCharts.init(event.detail.target);
+      });
+      document.addEventListener("DOMContentLoaded", () => tradeViewCharts.init());
+      document.addEventListener("change", (event) => {
+        if (!event.target.matches("[data-theme-toggle]")) return;
+        requestAnimationFrame(() => tradeViewCharts.init());
       });
     </script>
   </body>

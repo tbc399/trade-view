@@ -18,19 +18,41 @@
     </div>
   {% endif %}
 
+  {% if watchlists_message %}
+    <div class="alert alert-success border border-success/30 shadow-sm">
+      <span>{{ watchlists_message }}</span>
+    </div>
+  {% endif %}
+
   {% if watchlists %}
     <div class="space-y-4">
       {% for tradier_watchlist in watchlists %}
         <div class="card border border-base-300 bg-base-100 shadow-sm">
           <div class="card-body p-0">
-            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-300 px-5 py-4">
+            <div class="flex flex-col gap-4 border-b border-base-300 px-5 py-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h2 class="text-base font-semibold">{{ tradier_watchlist.name }}</h2>
                 <p class="text-sm text-base-content/60">{{ tradier_watchlist.items | length }} symbols</p>
               </div>
-              {% if tradier_watchlist.public_id %}
-                <span class="badge badge-ghost">{{ tradier_watchlist.public_id }}</span>
-              {% endif %}
+              <form
+                class="flex w-full flex-col gap-2 sm:flex-row lg:max-w-md"
+                hx-post="/watchlist/symbols"
+                hx-target="#main-content"
+                hx-swap="innerHTML"
+              >
+                <input type="hidden" name="watchlist_id" value="{{ tradier_watchlist.id }}">
+                <label class="input input-bordered input-sm flex flex-1 items-center gap-2">
+                  <input
+                    class="grow uppercase"
+                    type="text"
+                    name="symbol"
+                    placeholder="Add symbol"
+                    autocomplete="off"
+                    required
+                  >
+                </label>
+                <button class="btn btn-primary btn-sm" type="submit">Add</button>
+              </form>
             </div>
             {% if tradier_watchlist.items %}
               <div class="overflow-x-auto">

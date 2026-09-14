@@ -22,6 +22,66 @@
     </div>
   {% endif %}
 
+  <form
+    class="card border border-base-300 bg-base-100 shadow-sm"
+    hx-post="/positions/entry"
+    hx-target="#position-entry-result"
+    hx-swap="innerHTML"
+  >
+    <div class="card-body">
+      <div class="flex flex-col gap-5 xl:flex-row xl:items-end">
+        <div class="flex-1">
+          <h2 class="text-base font-semibold">Enter Position</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Preview an equity day market buy sized from the account value.
+          </p>
+        </div>
+
+        <div class="grid w-full gap-4 md:grid-cols-[minmax(10rem,1fr)_minmax(12rem,1fr)_auto] xl:max-w-3xl">
+          <label class="form-control">
+            <div class="label">
+              <span class="label-text font-medium">Symbol</span>
+            </div>
+            <input
+              class="input input-bordered uppercase"
+              type="text"
+              name="symbol"
+              placeholder="AAPL"
+              autocomplete="off"
+              required
+            >
+          </label>
+
+          <label class="form-control">
+            <div class="label">
+              <span class="label-text font-medium">Position size</span>
+              <span class="label-text-alt">% of account cost basis</span>
+            </div>
+            <label class="input input-bordered flex items-center gap-2">
+              <input
+                class="grow"
+                type="number"
+                name="position_size_percent"
+                min="0.01"
+                max="100"
+                step="0.01"
+                value="{{ preferences.position_size_default_percent }}"
+                required
+              >
+              <span class="text-base-content/50">%</span>
+            </label>
+          </label>
+
+          <button class="btn btn-primary md:self-end" type="submit">Preview</button>
+        </div>
+      </div>
+
+      <div id="position-entry-result">
+        {% include "partials/position-entry-result.html" %}
+      </div>
+    </div>
+  </form>
+
   <div class="card border border-base-300 bg-base-100 shadow-sm">
     <div class="card-body p-0">
       <div class="flex items-center justify-between border-b border-base-300 px-5 py-4">
@@ -40,7 +100,9 @@
                 <th>Name</th>
                 <th class="text-right">Cost Basis</th>
                 <th class="text-right">Shares</th>
+                <th class="text-right">Market Days</th>
                 <th class="text-right">Open P&amp;L</th>
+                <th class="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -52,6 +114,7 @@
                   <td>{{ position.name }}</td>
                   <td class="text-right font-mono text-sm">{{ position.cost_basis }}</td>
                   <td class="text-right font-mono text-sm">{{ position.shares }}</td>
+                  <td class="text-right font-mono text-sm">{{ position.held_market_days }}</td>
                   <td class="text-right">
                     <div class="flex flex-col items-end gap-1">
                       <span class="font-mono text-sm font-semibold">{{ position.pnl_dollars }}</span>
@@ -59,6 +122,18 @@
                         {{ position.pnl_percent }}
                       </span>
                     </div>
+                  </td>
+                  <td class="text-right">
+                    <form
+                      hx-post="/positions/exit"
+                      hx-target="#main-content"
+                      hx-swap="innerHTML"
+                      hx-confirm="Submit a market day order to exit {{ position.symbol }}?"
+                    >
+                      <input type="hidden" name="symbol" value="{{ position.symbol }}">
+                      <input type="hidden" name="quantity" value="{{ position.exit_quantity }}">
+                      <button class="btn btn-error btn-outline btn-sm" type="submit">Exit</button>
+                    </form>
                   </td>
                 </tr>
               {% endfor %}

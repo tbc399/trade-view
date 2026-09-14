@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     account_id: str = Field(default="", validation_alias="TRADIER_ACCOUNT_ID")
     api_token: SecretStr = Field(default=SecretStr(""), validation_alias="TRADIER_API_TOKEN")

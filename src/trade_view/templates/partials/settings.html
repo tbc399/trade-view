@@ -21,6 +21,24 @@
     </div>
   {% endif %}
 
+  <div class="card border border-base-300 bg-base-100 shadow-sm">
+    <div class="card-body">
+      <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 class="text-base font-semibold">Theme</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            <span data-theme-label>System</span>
+          </p>
+        </div>
+        <label class="flex cursor-pointer items-center gap-3">
+          <span class="text-sm text-base-content/60">Light</span>
+          <input type="checkbox" class="toggle toggle-primary" data-theme-toggle>
+          <span class="text-sm text-base-content/60">Dark</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
   <form
     class="card border border-base-300 bg-base-100 shadow-sm"
     hx-post="/settings/defaults"
