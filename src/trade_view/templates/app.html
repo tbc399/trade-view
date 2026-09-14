@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="corporate">
+  <head>
+    <title>{{ title or "Trade View" }}</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="{{ url_for('static', path='/styles.css') }}" rel="stylesheet">
+    <script src="https://unpkg.com/htmx.org@2.0.10/dist/htmx.min.js"></script>
+  </head>
+  <body class="min-h-screen bg-base-200 text-base-content">
+    <div class="tv-shell mx-auto grid min-h-screen grid-cols-1 gap-4 py-4 lg:grid-cols-[16rem_minmax(0,1fr)] lg:gap-5 lg:py-6">
+      <aside class="tv-sidebar">
+        <a href="/" class="btn btn-ghost justify-start px-3 text-xl font-semibold">
+          Trade View
+        </a>
+        <ul class="menu menu-md gap-1 rounded-box border border-base-300 bg-base-100 p-2 shadow-sm">
+          {% for item in nav_items %}
+            <li>
+              <a
+                class="tv-nav-link {% if active_nav == item.key %}active{% endif %}"
+                href="{{ item.path }}"
+                hx-get="{{ item.partial_path }}"
+                hx-target="#main-content"
+                hx-push-url="{{ item.path }}"
+                hx-swap="innerHTML"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="{{ item.icon }}"></path>
+                </svg>
+                <span>{{ item.label }}</span>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      </aside>
+
+      <div class="tv-main-pane min-w-0">
+        <div class="navbar mb-4 rounded-box border border-base-300 bg-base-100 shadow-sm lg:hidden">
+          <div class="flex-1">
+            <a href="/" class="btn btn-ghost text-lg">Trade View</a>
+          </div>
+          <div class="dropdown dropdown-end">
+            <button class="btn btn-square btn-ghost" tabindex="0" aria-label="Open navigation">
+              <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 6h16M4 12h16M4 18h16"></path>
+              </svg>
+            </button>
+            <ul class="menu dropdown-content z-10 mt-3 w-56 rounded-box bg-base-100 p-2 shadow">
+              {% for item in nav_items %}
+                <li>
+                  <a href="{{ item.path }}" hx-get="{{ item.partial_path }}" hx-target="#main-content" hx-push-url="{{ item.path }}">
+                    {{ item.label }}
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+
+        <main id="main-content" class="tv-content" hx-history-elt>
+          {% block content %}{% endblock %}
+        </main>
+      </div>
+    </div>
+
+    <script>
+      document.body.addEventListener("htmx:beforeRequest", (event) => {
+        const item = event.target.closest(".tv-nav-link");
+        if (!item) return;
+        document.querySelectorAll(".tv-nav-link").forEach((node) => node.classList.remove("active"));
+        item.classList.add("active");
+      });
+    </script>
+  </body>
+</html>

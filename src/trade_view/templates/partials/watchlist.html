@@ -1,0 +1,82 @@
+<section class="space-y-6">
+  <div class="flex flex-col gap-4 rounded-box border border-base-300 bg-base-100 p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+    <div>
+      <div class="badge badge-primary badge-outline mb-3">Tradier watchlists</div>
+      <h1 class="text-3xl font-semibold">Watchlist</h1>
+      <p class="mt-2 max-w-2xl text-sm text-base-content/65">
+        Your Tradier watchlists, enriched with quote data for a quick market read.
+      </p>
+    </div>
+    <button class="btn btn-outline" hx-get="/partials/watchlist" hx-target="#main-content" hx-push-url="/watchlist">
+      Refresh
+    </button>
+  </div>
+
+  {% if watchlists_error %}
+    <div class="alert alert-warning border border-warning/30 shadow-sm">
+      <span>{{ watchlists_error }}</span>
+    </div>
+  {% endif %}
+
+  {% if watchlists %}
+    <div class="space-y-4">
+      {% for tradier_watchlist in watchlists %}
+        <div class="card border border-base-300 bg-base-100 shadow-sm">
+          <div class="card-body p-0">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-300 px-5 py-4">
+              <div>
+                <h2 class="text-base font-semibold">{{ tradier_watchlist.name }}</h2>
+                <p class="text-sm text-base-content/60">{{ tradier_watchlist.items | length }} symbols</p>
+              </div>
+              {% if tradier_watchlist.public_id %}
+                <span class="badge badge-ghost">{{ tradier_watchlist.public_id }}</span>
+              {% endif %}
+            </div>
+            {% if tradier_watchlist.items %}
+              <div class="overflow-x-auto">
+                <table class="table table-zebra">
+                  <thead>
+                    <tr>
+                      <th>Symbol</th>
+                      <th>Name</th>
+                      <th class="text-right">Last</th>
+                      <th class="text-right">Move</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for item in tradier_watchlist.items %}
+                      <tr>
+                        <td><span class="font-semibold">{{ item.symbol }}</span></td>
+                        <td>{{ item.name }}</td>
+                        <td class="text-right font-mono text-sm">{{ item.price }}</td>
+                        <td class="text-right">
+                          <span class="badge badge-outline {% if item.change_value >= 0 %}badge-success{% else %}badge-error{% endif %}">
+                            {{ item.change }}
+                          </span>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="p-5">
+                <div class="rounded-box border border-dashed border-base-300 bg-base-200 p-5 text-sm text-base-content/65">
+                  This watchlist has no symbols.
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body">
+        <div class="rounded-box border border-dashed border-base-300 bg-base-200 p-6 text-sm text-base-content/65">
+          No Tradier watchlists to display yet.
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</section>

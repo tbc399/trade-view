@@ -1,0 +1,68 @@
+<section class="space-y-6">
+  <div class="flex flex-col gap-4 rounded-box border border-base-300 bg-base-100 p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+    <div>
+      <div class="badge badge-primary badge-outline mb-3">Application defaults</div>
+      <h1 class="text-3xl font-semibold">Settings</h1>
+      <p class="mt-2 max-w-2xl text-sm text-base-content/65">
+        Defaults used when preparing new positions and trade plans.
+      </p>
+    </div>
+  </div>
+
+  {% if settings_message %}
+    <div class="alert alert-success border border-success/30 shadow-sm">
+      <span>{{ settings_message }}</span>
+    </div>
+  {% endif %}
+
+  {% if settings_error %}
+    <div class="alert alert-error border border-error/30 shadow-sm">
+      <span>{{ settings_error }}</span>
+    </div>
+  {% endif %}
+
+  <form
+    class="card border border-base-300 bg-base-100 shadow-sm"
+    hx-post="/settings/defaults"
+    hx-target="#main-content"
+    hx-swap="innerHTML"
+  >
+    <div class="card-body">
+      <div class="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+        <div class="w-full max-w-sm">
+          <label class="form-control w-full">
+            <div class="label">
+              <span class="label-text font-medium">Position size default</span>
+              <span class="label-text-alt">% of account value</span>
+            </div>
+            <label class="input input-bordered flex items-center gap-2">
+              <input
+                class="grow"
+                type="number"
+                name="position_size_default_percent"
+                min="0.01"
+                max="100"
+                step="0.01"
+                value="{{ preferences.position_size_default_percent }}"
+                required
+              >
+              <span class="text-base-content/50">%</span>
+            </label>
+          </label>
+        </div>
+
+        <div class="stats border border-base-300 bg-base-200 shadow-none">
+          <div class="stat min-w-52">
+            <div class="stat-title">Current Default</div>
+            <div class="stat-value text-2xl">{{ preferences.position_size_default_percent }}%</div>
+            <div class="stat-desc">per new position</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-actions justify-end border-t border-base-300 pt-5">
+        <button class="btn btn-primary" type="submit">Save Defaults</button>
+      </div>
+    </div>
+  </form>
+</section>

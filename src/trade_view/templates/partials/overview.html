@@ -1,0 +1,99 @@
+<section class="space-y-6">
+  <div class="hero min-h-72 overflow-hidden rounded-box border border-base-300 bg-base-100 shadow-sm">
+    <div class="hero-content w-full items-stretch justify-between gap-8 p-6 lg:p-10">
+      <div class="max-w-2xl">
+        <div class="badge badge-primary badge-outline mb-4">Server-driven trading dashboard</div>
+        <h1 class="text-3xl font-semibold leading-tight lg:text-4xl">A calm command center for watching trades take shape.</h1>
+        <p class="mt-4 max-w-xl text-base-content/70">
+          Trade View is wired for FastAPI, Jinja templates, HTMX partial updates, and DaisyUI components. The shell is ready for market data, positions, and trade review workflows.
+        </p>
+        <div class="mt-6 flex flex-wrap gap-3">
+          <button class="btn btn-primary" hx-get="/partials/watchlist" hx-target="#main-content" hx-push-url="/watchlist">
+            Open Watchlist
+          </button>
+          <button class="btn btn-outline" hx-get="/partials/positions" hx-target="#main-content" hx-push-url="/positions">
+            View Positions
+          </button>
+        </div>
+      </div>
+      <div class="hidden min-w-80 flex-col justify-between rounded-box bg-base-200 p-5 lg:flex">
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-medium text-base-content/60">Session Bias</span>
+          <span class="badge badge-success">Constructive</span>
+        </div>
+        <div class="radial-progress place-self-center text-primary" style="--value:68;" aria-valuenow="68" role="progressbar">68%</div>
+        <progress class="progress progress-primary w-full" value="68" max="100"></progress>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats stats-vertical w-full border border-base-300 bg-base-100 shadow-sm lg:stats-horizontal">
+    {% for stat in summary_stats %}
+      <div class="stat">
+        <div class="stat-title">{{ stat.label }}</div>
+        <div class="stat-value text-2xl">{{ stat.value }}</div>
+        <div class="stat-desc">{{ stat.detail }}</div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+    <section class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="card-title">Market Watch</h2>
+            <p class="text-sm text-base-content/60">Starter rows for the first data integration.</p>
+          </div>
+          <button class="btn btn-sm btn-outline">Refresh</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="table table-zebra">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Name</th>
+                <th class="text-right">Price</th>
+                <th class="text-right">Move</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in watchlist %}
+                <tr>
+                  <td><span class="font-semibold">{{ item.symbol }}</span></td>
+                  <td>{{ item.name }}</td>
+                  <td class="text-right">{{ item.price }}</td>
+                  <td class="text-right">
+                    <span class="badge {% if item.change.startswith('+') %}badge-success{% else %}badge-warning{% endif %} badge-outline">
+                      {{ item.change }}
+                    </span>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="space-y-4">
+      <div class="alert border border-base-300 bg-base-100 shadow-sm">
+        <span class="badge badge-info badge-outline">HTMX</span>
+        <span>Navigation swaps this content from the server without taking over the frontend.</span>
+      </div>
+      <div class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title">Next Build Lane</h2>
+          <div class="tabs tabs-boxed">
+            <button class="tab tab-active">Positions</button>
+            <button class="tab">Orders</button>
+            <button class="tab">Review</button>
+          </div>
+          <p class="text-sm text-base-content/65">
+            The page is intentionally plain right now: strong structure, clean margins, and a real place to connect the trading features.
+          </p>
+        </div>
+      </div>
+    </section>
+  </div>
+</section>

@@ -1,0 +1,14 @@
+{
+  "name": "trade-view",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/trade_view/static/input.css -o ./src/trade_view/static/styles.css",
+    "dev:css": "tailwindcss -i ./src/trade_view/static/input.css -o ./src/trade_view/static/styles.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "daisyui": "^5.7.37",
+    "tailwindcss": "^4.3.3"
+  }
+}

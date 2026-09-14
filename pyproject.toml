@@ -7,7 +7,14 @@ authors = [
     { name = "Travis Cammack", email = "traviscammack@protonmail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "asyncpg>=0.31.0",
+    "fastapi[standard]>=0.141.1",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+]
 
 [project.scripts]
 trade-view = "trade_view:main"

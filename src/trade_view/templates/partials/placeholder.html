@@ -1,0 +1,14 @@
+<section class="space-y-6">
+  <div class="card border border-base-300 bg-base-100 shadow-sm">
+    <div class="card-body">
+      <div class="badge badge-secondary badge-outline">{{ section.eyebrow }}</div>
+      <h1 class="card-title mt-3 text-3xl">{{ section.heading }}</h1>
+      <p class="max-w-2xl text-base-content/70">{{ section.message }}</p>
+      <div class="card-actions mt-4">
+        <button class="btn btn-primary" hx-get="/partials/overview" hx-target="#main-content" hx-push-url="/">
+          Back to Overview
+        </button>
+      </div>
+    </div>
+  </div>
+</section>

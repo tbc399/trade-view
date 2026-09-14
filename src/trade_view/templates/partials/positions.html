@@ -1,0 +1,77 @@
+<section class="space-y-6">
+  <div class="flex flex-col gap-4 rounded-box border border-base-300 bg-base-100 p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+    <div>
+      <div class="badge badge-primary badge-outline mb-3">Current exposure</div>
+      <h1 class="text-3xl font-semibold">Positions</h1>
+      <p class="mt-2 max-w-2xl text-sm text-base-content/65">
+        A server-rendered list of current holdings, ready to swap from sample data to your account-backed positions.
+      </p>
+    </div>
+    <div class="stats border border-base-300 bg-base-200 shadow-none">
+      <div class="stat min-w-44">
+        <div class="stat-title">Open Positions</div>
+        <div class="stat-value text-2xl">{{ positions | length }}</div>
+        <div class="stat-desc">tracked holdings</div>
+      </div>
+    </div>
+  </div>
+
+  {% if positions_error %}
+    <div class="alert alert-warning border border-warning/30 shadow-sm">
+      <span>{{ positions_error }}</span>
+    </div>
+  {% endif %}
+
+  <div class="card border border-base-300 bg-base-100 shadow-sm">
+    <div class="card-body p-0">
+      <div class="flex items-center justify-between border-b border-base-300 px-5 py-4">
+        <div>
+          <h2 class="text-base font-semibold">All Positions</h2>
+          <p class="text-sm text-base-content/60">Cost basis, shares, and open P&amp;L.</p>
+        </div>
+        <button class="btn btn-sm btn-outline">Refresh</button>
+      </div>
+      {% if positions %}
+        <div class="overflow-x-auto">
+          <table class="table table-zebra">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Name</th>
+                <th class="text-right">Cost Basis</th>
+                <th class="text-right">Shares</th>
+                <th class="text-right">Open P&amp;L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for position in positions %}
+                <tr>
+                  <td>
+                    <span class="font-semibold">{{ position.symbol }}</span>
+                  </td>
+                  <td>{{ position.name }}</td>
+                  <td class="text-right font-mono text-sm">{{ position.cost_basis }}</td>
+                  <td class="text-right font-mono text-sm">{{ position.shares }}</td>
+                  <td class="text-right">
+                    <div class="flex flex-col items-end gap-1">
+                      <span class="font-mono text-sm font-semibold">{{ position.pnl_dollars }}</span>
+                      <span class="badge badge-outline {% if position.pnl_value >= 0 %}badge-success{% else %}badge-error{% endif %}">
+                        {{ position.pnl_percent }}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="p-6">
+          <div class="rounded-box border border-dashed border-base-300 bg-base-200 p-6 text-sm text-base-content/65">
+            No positions to display yet.
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>

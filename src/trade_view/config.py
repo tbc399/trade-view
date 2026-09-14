@@ -1,0 +1,31 @@
+from functools import lru_cache
+from decimal import Decimal
+
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    account_id: str = Field(default="", validation_alias="TRADIER_ACCOUNT_ID")
+    api_token: SecretStr = Field(default=SecretStr(""), validation_alias="TRADIER_API_TOKEN")
+    base_url: str = Field(default="https://api.tradier.com/v1", validation_alias="TRADIER_BASE_URL")
+    timeout_seconds: float = Field(default=10.0, validation_alias="TRADIER_TIMEOUT_SECONDS")
+    position_size_default_percent: Decimal = Field(
+        default=Decimal("5"),
+        validation_alias="POSITION_SIZE_DEFAULT_PERCENT",
+    )
+
+    @property
+    def has_tradier_credentials(self) -> bool:
+        return bool(self.account_id and self.api_token.get_secret_value())
+
+    @property
+    def has_tradier_token(self) -> bool:
+        return bool(self.api_token.get_secret_value())
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
