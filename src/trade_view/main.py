@@ -20,6 +20,7 @@ from trade_view.auth import (
 from trade_view.config import get_settings
 from trade_view.tradier import (
     DisplayHistoricalBalancePoint,
+    DisplayHistoricalPricePoint,
     PlacedEquityOrder,
     PreviewedEquityOrder,
     TradierAPIError,
@@ -28,6 +29,7 @@ from trade_view.tradier import (
     TradierOrderSizingError,
     format_percent,
     format_signed_money,
+    to_date,
 )
 
 
@@ -189,6 +191,86 @@ def account_return_summary(
     }
 
 
+def account_balance_chart_data(
+    points: list[DisplayHistoricalBalancePoint],
+) -> list[dict[str, float | str]]:
+    return [{"date": point.date, "value": float(point.value)} for point in points]
+
+
+def performance_chart_data(
+    balance_points: list[DisplayHistoricalBalancePoint],
+    benchmark_points: list[DisplayHistoricalPricePoint],
+) -> list[dict[str, float | str]]:
+    dated_prices = [
+        (price_date, point.close)
+        for point in benchmark_points
+        if (price_date := to_date(point.date)) is not None and point.close > 0
+    ]
+    dated_prices.sort(key=lambda item: item[0])
+    if not dated_prices:
+        return []
+
+    dated_balances = [
+        (balance_date, point)
+        for point in balance_points
+        if (balance_date := to_date(point.date)) is not None and point.value > 0
+    ]
+    dated_balances.sort(key=lambda item: item[0])
+    if not dated_balances:
+        return []
+
+    rows = []
+    price_index = 0
+    latest_benchmark_price = None
+    base_account_value = None
+    base_benchmark_price = None
+
+    for balance_date, balance_point in dated_balances:
+        while price_index < len(dated_prices) and dated_prices[price_index][0] <= balance_date:
+            latest_benchmark_price = dated_prices[price_index][1]
+            price_index += 1
+
+        if latest_benchmark_price is None:
+            continue
+
+        if base_account_value is None or base_benchmark_price is None:
+            base_account_value = balance_point.value
+            base_benchmark_price = latest_benchmark_price
+
+        rows.append(
+            {
+                "date": balance_point.date,
+                "account": float((balance_point.value / base_account_value - 1) * Decimal("100")),
+                "benchmark": float(
+                    (latest_benchmark_price / base_benchmark_price - 1) * Decimal("100")
+                ),
+                "account_value": float(balance_point.value),
+                "benchmark_price": float(latest_benchmark_price),
+            }
+        )
+
+    return rows
+
+
+def watchlist_symbols(watchlists: list) -> list[str]:
+    return sorted(
+        {
+            item.symbol.strip().upper()
+            for watchlist in watchlists
+            for item in watchlist.items
+            if item.symbol.strip()
+        }
+    )
+
+
+def finviz_watchlist_url(watchlists: list) -> str:
+    symbols = watchlist_symbols(watchlists)
+    if not symbols:
+        return ""
+
+    return f"https://finviz.com/screener.ashx?v=211&t={quote(','.join(symbols), safe=',')}"
+
+
 def page_context(
     request: Request,
     section_key: str,
@@ -197,6 +279,9 @@ def page_context(
     historical_balance_points: list[DisplayHistoricalBalancePoint] | None = None,
     historical_balance_error: str = "",
     historical_balance_period: str = DEFAULT_HISTORICAL_BALANCE_PERIOD,
+    benchmark_symbol: str = "SPY",
+    benchmark_error: str = "",
+    performance_points: list[dict[str, float | str]] | None = None,
     watchlists: list | None = None,
     watchlists_error: str = "",
     watchlists_message: str = "",
@@ -218,19 +303,21 @@ def page_context(
         "summary_stats": SUMMARY_STATS,
         "watchlist": WATCHLIST,
         "watchlists": watchlists or [],
+        "watchlists_finviz_url": finviz_watchlist_url(watchlists or []),
+        "watchlists_symbol_count": len(watchlist_symbols(watchlists or [])),
         "watchlists_error": watchlists_error,
         "watchlists_message": watchlists_message,
         "positions": positions or [],
         "positions_error": positions_error,
         "historical_balance_points": historical_balance_points,
-        "historical_balance_chart_data": [
-            {"date": point.date, "value": float(point.value)}
-            for point in historical_balance_points
-        ],
+        "historical_balance_chart_data": account_balance_chart_data(historical_balance_points),
         "historical_balance_error": historical_balance_error,
         "historical_balance_period": historical_balance_period,
         "historical_balance_period_label": historical_balance_period_label(historical_balance_period),
         "historical_balance_period_options": HISTORICAL_BALANCE_PERIOD_OPTIONS,
+        "benchmark_symbol": benchmark_symbol,
+        "benchmark_error": benchmark_error,
+        "performance_chart_data": performance_points or [],
         "account_return": account_return_summary(
             historical_balance_points,
             historical_balance_period,
@@ -372,9 +459,12 @@ async def overview_context(
     historical_balance_points = []
     historical_balance_error = ""
     historical_balance_period = normalize_historical_balance_period(historical_balance_period)
+    settings = get_settings()
+    benchmark_symbol = (settings.benchmark_symbol or "SPY").strip().upper()
+    benchmark_error = ""
+    performance_points = []
     watchlists = []
     watchlists_error = ""
-    settings = get_settings()
 
     async def load_positions():
         return await TradierClient(settings).get_positions()
@@ -419,6 +509,32 @@ async def overview_context(
     else:
         historical_balance_points = historical_balance_result
 
+    if not historical_balance_error and len(historical_balance_points) >= 2:
+        historical_dates = [
+            historical_date
+            for point in historical_balance_points
+            if (historical_date := to_date(point.date)) is not None
+        ]
+        if historical_dates:
+            try:
+                benchmark_points = await TradierClient(settings).get_historical_prices(
+                    benchmark_symbol,
+                    min(historical_dates),
+                    max(historical_dates),
+                )
+                performance_points = performance_chart_data(
+                    historical_balance_points,
+                    benchmark_points,
+                )
+                if not performance_points:
+                    benchmark_error = f"No {benchmark_symbol} benchmark prices were available for this period."
+            except TradierCredentialsMissing:
+                benchmark_error = f"Add TRADIER_API_TOKEN to compare performance against {benchmark_symbol}."
+            except TradierAPIError as exc:
+                benchmark_error = str(exc)
+            except Exception:
+                benchmark_error = f"Unable to load {benchmark_symbol} benchmark history right now."
+
     watched_symbols_count = sum(len(watchlist.items) for watchlist in watchlists)
     open_pnl = sum(Decimal(str(position.pnl_value)) for position in positions)
     account_return = account_return_summary(historical_balance_points, historical_balance_period)
@@ -462,6 +578,9 @@ async def overview_context(
         historical_balance_points=historical_balance_points,
         historical_balance_error=historical_balance_error,
         historical_balance_period=historical_balance_period,
+        benchmark_symbol=benchmark_symbol,
+        benchmark_error=benchmark_error,
+        performance_points=performance_points,
         watchlists=watchlists[:3],
         watchlists_error=watchlists_error,
     )
@@ -631,6 +750,35 @@ async def add_watchlist_symbol(request: Request):
         watchlists_error = "Unable to update the Tradier watchlist right now."
     else:
         watchlists_message = f"Added {symbol} to the watchlist."
+
+    context = await watchlist_context(
+        request,
+        watchlists_message=watchlists_message,
+        watchlists_error=watchlists_error,
+    )
+    return templates.TemplateResponse(request, context["partial_template"], context)
+
+
+@app.post("/watchlist/symbols/remove", response_class=HTMLResponse)
+async def remove_watchlist_symbol(request: Request):
+    form = await request.form()
+    watchlists_message = ""
+    watchlists_error = ""
+
+    try:
+        watchlist_id = parse_watchlist_id(str(form.get("watchlist_id") or ""))
+        symbol = parse_symbol(str(form.get("symbol") or ""))
+        await TradierClient(get_settings()).remove_symbol_from_watchlist(watchlist_id, symbol)
+    except ValueError as exc:
+        watchlists_error = str(exc)
+    except TradierCredentialsMissing:
+        watchlists_error = "Add TRADIER_API_TOKEN to your .env file before updating watchlists."
+    except TradierAPIError as exc:
+        watchlists_error = str(exc)
+    except Exception:
+        watchlists_error = "Unable to update the Tradier watchlist right now."
+    else:
+        watchlists_message = f"Removed {symbol} from the watchlist."
 
     context = await watchlist_context(
         request,

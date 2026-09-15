@@ -59,6 +59,13 @@ class DisplayHistoricalBalancePoint:
 
 
 @dataclass(frozen=True)
+class DisplayHistoricalPricePoint:
+    date: str
+    close: Decimal
+    close_display: str
+
+
+@dataclass(frozen=True)
 class PlacedEquityOrder:
     symbol: str
     quantity: str
@@ -225,6 +232,11 @@ def historical_balance_sort_key(point: DisplayHistoricalBalancePoint) -> tuple[b
     return balance_date is None, balance_date or date.max
 
 
+def historical_price_sort_key(point: DisplayHistoricalPricePoint) -> tuple[bool, date]:
+    price_date = to_date(point.date)
+    return price_date is None, price_date or date.max
+
+
 class TradierClient:
     def __init__(
         self,
@@ -319,6 +331,30 @@ class TradierClient:
             if (point := self.to_display_historical_balance_point(balance)) is not None
         ]
         return sorted(points, key=historical_balance_sort_key)
+
+    async def get_historical_prices(
+        self,
+        symbol: str,
+        start: date,
+        end: date,
+    ) -> list[DisplayHistoricalPricePoint]:
+        if not self.settings.has_tradier_token:
+            raise TradierCredentialsMissing("Tradier API token is not configured.")
+
+        async with httpx.AsyncClient(
+            base_url=self.settings.base_url.rstrip("/"),
+            headers=self.headers,
+            timeout=self.settings.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            raw_prices = await self.get_market_history(client, symbol, start, end)
+
+        points = [
+            point
+            for price in raw_prices
+            if (point := self.to_display_historical_price_point(price)) is not None
+        ]
+        return sorted(points, key=historical_price_sort_key)
 
     async def preview_long_equity_position(
         self,
@@ -453,6 +489,27 @@ class TradierClient:
         except httpx.HTTPStatusError as exc:
             raise TradierAPIError(f"Tradier returned HTTP {response.status_code}.") from exc
 
+    async def remove_symbol_from_watchlist(
+        self,
+        watchlist_id: str,
+        symbol: str,
+    ) -> None:
+        if not self.settings.has_tradier_token:
+            raise TradierCredentialsMissing("Tradier API token is not configured.")
+
+        async with httpx.AsyncClient(
+            base_url=self.settings.base_url.rstrip("/"),
+            headers=self.headers,
+            timeout=self.settings.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.delete(f"/watchlists/{watchlist_id}/symbols/{symbol}")
+
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise TradierAPIError(f"Tradier returned HTTP {response.status_code}.") from exc
+
     @property
     def headers(self) -> dict[str, str]:
         return {
@@ -487,6 +544,28 @@ class TradierClient:
         )
         data = self.parse_response(response)
         return self.extract_historical_balance_records(data)
+
+    async def get_market_history(
+        self,
+        client: httpx.AsyncClient,
+        symbol: str,
+        start: date,
+        end: date,
+    ) -> list[dict[str, Any]]:
+        response = await client.get(
+            "/markets/history",
+            params={
+                "symbol": symbol,
+                "interval": "daily",
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+            },
+        )
+        data = self.parse_response(response)
+        history = data.get("history") or {}
+        if not isinstance(history, dict):
+            return []
+        return normalize_list(history.get("day"))
 
     async def get_open_market_days(
         self,
@@ -708,6 +787,21 @@ class TradierClient:
             date=balance_date[:10],
             value=value,
             value_display=format_money(value),
+        )
+
+    def to_display_historical_price_point(
+        self,
+        price: dict[str, Any],
+    ) -> DisplayHistoricalPricePoint | None:
+        price_date = str(price.get("date") or "")
+        close = to_decimal(price.get("close"))
+        if not price_date or close is None:
+            return None
+
+        return DisplayHistoricalPricePoint(
+            date=price_date[:10],
+            close=close,
+            close_display=format_money(close),
         )
 
     def to_display_watchlist_item(

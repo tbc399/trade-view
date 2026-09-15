@@ -1,12 +1,20 @@
 from functools import lru_cache
 from decimal import Decimal
+from pathlib import Path
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
+    model_config = SettingsConfigDict(
+        env_file=PROJECT_ROOT / ".env",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
     @classmethod
     def settings_customise_sources(
@@ -25,6 +33,7 @@ class Settings(BaseSettings):
     api_token: SecretStr = Field(default=SecretStr(""), validation_alias="TRADIER_API_TOKEN")
     base_url: str = Field(default="https://api.tradier.com/v1", validation_alias="TRADIER_BASE_URL")
     timeout_seconds: float = Field(default=10.0, validation_alias="TRADIER_TIMEOUT_SECONDS")
+    benchmark_symbol: str = Field(default="SPY", validation_alias="BENCHMARK_SYMBOL")
     position_size_default_percent: Decimal = Field(
         default=Decimal("5"),
         validation_alias="POSITION_SIZE_DEFAULT_PERCENT",

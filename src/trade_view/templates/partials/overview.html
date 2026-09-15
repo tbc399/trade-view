@@ -36,9 +36,9 @@
     <div class="card-body gap-5">
       <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <h2 class="text-base font-semibold">Account Balance</h2>
+          <h2 class="text-base font-semibold">Account History</h2>
           <p class="mt-1 text-sm text-base-content/60">
-            Historical total value over {{ historical_balance_period_label }}.
+            Balance and {{ benchmark_symbol }} performance over {{ historical_balance_period_label }}.
           </p>
         </div>
 
@@ -51,6 +51,18 @@
                 {{ account_return.change }}
               </span>
             </div>
+          </div>
+
+          <div class="join">
+            <button class="btn btn-sm btn-primary join-item" type="button" data-chart-mode="balance">Balance</button>
+            <button
+              class="btn btn-sm btn-outline join-item"
+              type="button"
+              data-chart-mode="performance"
+              {% if not performance_chart_data %}disabled{% endif %}
+            >
+              Vs {{ benchmark_symbol }}
+            </button>
           </div>
 
           <div class="max-w-full overflow-x-auto">
@@ -76,8 +88,15 @@
           <span>{{ historical_balance_error }}</span>
         </div>
       {% elif historical_balance_chart_data %}
-        <div class="tv-account-balance-chart" data-account-balance-chart></div>
+        <div class="h-72 min-h-72 w-full" data-account-balance-chart></div>
         <script type="application/json" data-account-balance-chart-data>{{ historical_balance_chart_data | tojson }}</script>
+        <script type="application/json" data-account-performance-chart-data>{{ performance_chart_data | tojson }}</script>
+        <script type="application/json" data-account-chart-meta>{{ {"benchmark_symbol": benchmark_symbol} | tojson }}</script>
+        {% if benchmark_error %}
+          <div class="alert alert-warning border border-warning/30 shadow-sm">
+            <span>{{ benchmark_error }}</span>
+          </div>
+        {% endif %}
       {% else %}
         <div class="rounded-box border border-dashed border-base-300 bg-base-200 p-5 text-sm text-base-content/65">
           No historical balance points to chart for this period.
@@ -111,7 +130,7 @@
 
         {% if positions %}
           <div class="overflow-x-auto">
-            <table class="table table-zebra">
+            <table class="table table-zebra table-sm">
               <thead>
                 <tr>
                   <th>Symbol</th>
@@ -129,9 +148,9 @@
                     <td class="text-right font-mono text-sm">{{ position.shares }}</td>
                     <td class="text-right font-mono text-sm">{{ position.held_market_days }}</td>
                     <td class="text-right">
-                      <div class="flex flex-col items-end gap-1">
+                      <div class="flex items-center justify-end gap-2">
                         <span class="font-mono text-sm font-semibold">{{ position.pnl_dollars }}</span>
-                        <span class="badge badge-outline {% if position.pnl_value >= 0 %}badge-success{% else %}badge-error{% endif %}">
+                        <span class="badge badge-sm badge-outline {% if position.pnl_value >= 0 %}badge-success{% else %}badge-error{% endif %}">
                           {{ position.pnl_percent }}
                         </span>
                       </div>

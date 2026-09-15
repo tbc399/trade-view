@@ -89,11 +89,20 @@
           <h2 class="text-base font-semibold">All Positions</h2>
           <p class="text-sm text-base-content/60">Cost basis, shares, and open P&amp;L.</p>
         </div>
-        <button class="btn btn-sm btn-outline">Refresh</button>
+        <button
+          class="btn btn-sm btn-outline"
+          hx-get="/partials/positions"
+          hx-target="#main-content"
+          hx-swap="innerHTML"
+          hx-push-url="/positions"
+          type="button"
+        >
+          Refresh
+        </button>
       </div>
       {% if positions %}
         <div class="overflow-x-auto">
-          <table class="table table-zebra">
+          <table class="table table-zebra table-sm">
             <thead>
               <tr>
                 <th>Symbol</th>
@@ -116,9 +125,9 @@
                   <td class="text-right font-mono text-sm">{{ position.shares }}</td>
                   <td class="text-right font-mono text-sm">{{ position.held_market_days }}</td>
                   <td class="text-right">
-                    <div class="flex flex-col items-end gap-1">
+                    <div class="flex items-center justify-end gap-2">
                       <span class="font-mono text-sm font-semibold">{{ position.pnl_dollars }}</span>
-                      <span class="badge badge-outline {% if position.pnl_value >= 0 %}badge-success{% else %}badge-error{% endif %}">
+                      <span class="badge badge-sm badge-outline {% if position.pnl_value >= 0 %}badge-success{% else %}badge-error{% endif %}">
                         {{ position.pnl_percent }}
                       </span>
                     </div>

@@ -7,9 +7,26 @@
         Your Tradier watchlists, enriched with quote data for a quick market read.
       </p>
     </div>
-    <button class="btn btn-outline" hx-get="/partials/watchlist" hx-target="#main-content" hx-push-url="/watchlist">
-      Refresh
-    </button>
+    <div class="flex flex-wrap gap-2">
+      {% if watchlists_finviz_url %}
+        <a class="btn btn-primary" href="{{ watchlists_finviz_url }}" target="_blank" rel="noopener noreferrer">
+          Finviz
+          <span class="badge badge-primary-content">{{ watchlists_symbol_count }}</span>
+        </a>
+      {% else %}
+        <button class="btn btn-primary" type="button" disabled>Finviz</button>
+      {% endif %}
+      <button
+        class="btn btn-outline"
+        hx-get="/partials/watchlist"
+        hx-target="#main-content"
+        hx-swap="innerHTML"
+        hx-push-url="/watchlist"
+        type="button"
+      >
+        Refresh
+      </button>
+    </div>
   </div>
 
   {% if watchlists_error %}
@@ -63,6 +80,7 @@
                       <th>Name</th>
                       <th class="text-right">Last</th>
                       <th class="text-right">Move</th>
+                      <th class="text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -75,6 +93,17 @@
                           <span class="badge badge-outline {% if item.change_value >= 0 %}badge-success{% else %}badge-error{% endif %}">
                             {{ item.change }}
                           </span>
+                        </td>
+                        <td class="text-right">
+                          <form
+                            hx-post="/watchlist/symbols/remove"
+                            hx-target="#main-content"
+                            hx-swap="innerHTML"
+                          >
+                            <input type="hidden" name="watchlist_id" value="{{ tradier_watchlist.id }}">
+                            <input type="hidden" name="symbol" value="{{ item.symbol }}">
+                            <button class="btn btn-error btn-outline btn-xs" type="submit">Remove</button>
+                          </form>
                         </td>
                       </tr>
                     {% endfor %}

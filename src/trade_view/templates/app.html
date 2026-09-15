@@ -25,9 +25,9 @@
     <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js" defer></script>
   </head>
   <body class="min-h-screen bg-base-200 text-base-content">
-    <div class="tv-shell">
-      <aside class="tv-sidebar">
-        <div class="tv-sidebar-panel rounded-box border border-base-300 bg-base-100 shadow-sm">
+    <div class="mx-auto grid min-h-screen w-full max-w-7xl gap-4 px-3 py-3 pb-8 lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-3 lg:px-6 lg:py-4 lg:pb-12">
+      <aside class="hidden lg:sticky lg:top-4 lg:flex lg:h-[calc(100vh-2rem)] lg:flex-col">
+        <div class="flex h-full flex-col gap-3 rounded-box border border-base-300 bg-base-100 p-4 shadow-sm">
           <a href="/" class="btn btn-ghost justify-start px-3 text-xl font-semibold">
             Trade View
           </a>
@@ -42,7 +42,7 @@
                   hx-push-url="{{ item.path }}"
                   hx-swap="innerHTML"
                 >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <svg class="size-[1.1rem] fill-none stroke-current stroke-[1.8] [stroke-linecap:round] [stroke-linejoin:round]" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="{{ item.icon }}"></path>
                   </svg>
                   <span>{{ item.label }}</span>
@@ -63,7 +63,7 @@
         </div>
       </aside>
 
-      <div class="tv-main-pane min-w-0">
+      <div class="min-w-0">
         <div class="navbar mb-4 rounded-box border border-base-300 bg-base-100 shadow-sm lg:hidden">
           <div class="flex-1">
             <a href="/" class="btn btn-ghost text-lg">Trade View</a>
@@ -91,7 +91,7 @@
           </div>
         </div>
 
-        <main id="main-content" class="tv-content" hx-history-elt>
+        <main id="main-content" class="min-w-0" hx-history-elt>
           {% block content %}{% endblock %}
         </main>
       </div>
@@ -159,6 +159,11 @@
           currency: "USD",
           maximumFractionDigits: 2,
         });
+        const percentFormatter = new Intl.NumberFormat("en-US", {
+          maximumFractionDigits: 2,
+          minimumFractionDigits: 2,
+          signDisplay: "always",
+        });
 
         const themeColors = () => {
           const isDark = document.documentElement.dataset.theme === "dark";
@@ -170,41 +175,73 @@
           };
         };
 
-        const parseChartData = (chartNode) => {
-          const dataNode = chartNode.parentElement?.querySelector("[data-account-balance-chart-data]");
-          if (!dataNode) return [];
+        const parseJson = (node, fallback) => {
+          if (!node) return fallback;
 
           try {
-            const parsed = JSON.parse(dataNode.textContent || "[]");
-            return Array.isArray(parsed) ? parsed : [];
+            return JSON.parse(node.textContent || "");
           } catch {
-            return [];
+            return fallback;
           }
         };
 
-        const init = (root = document) => {
-          if (!window.echarts) return;
+        const parseChartData = (chartNode) => {
+          const container = chartNode.parentElement;
+          const balanceData = parseJson(
+            container?.querySelector("[data-account-balance-chart-data]"),
+            [],
+          );
+          const performanceData = parseJson(
+            container?.querySelector("[data-account-performance-chart-data]"),
+            [],
+          );
+          const meta = parseJson(container?.querySelector("[data-account-chart-meta]"), {});
 
-          root.querySelectorAll("[data-account-balance-chart]").forEach((chartNode) => {
-            const chartData = parseChartData(chartNode);
-            if (!chartData.length) return;
+          return {
+            balance: Array.isArray(balanceData) ? balanceData : [],
+            performance: Array.isArray(performanceData) ? performanceData : [],
+            benchmarkSymbol: meta.benchmark_symbol || "SPY",
+          };
+        };
 
-            const values = chartData.map((point) => Number(point.value || 0));
-            const dates = chartData.map((point) => String(point.date || ""));
-            const isPositive = values[values.length - 1] >= values[0];
-            const lineColor = isPositive ? "#16a34a" : "#dc2626";
-            const colors = themeColors();
-            const chart = window.echarts.getInstanceByDom(chartNode) || window.echarts.init(chartNode);
+        const formatPercent = (value) => `${percentFormatter.format(Number(value || 0))}%`;
 
+        const setModeButtons = (container, mode) => {
+          container?.querySelectorAll("[data-chart-mode]").forEach((button) => {
+            const active = button.dataset.chartMode === mode;
+            button.classList.toggle("btn-primary", active);
+            button.classList.toggle("btn-outline", !active);
+          });
+        };
+
+        const renderChart = (chartNode) => {
+          const chartData = parseChartData(chartNode);
+          if (!chartData.balance.length) return;
+
+          const requestedMode = chartNode.dataset.chartMode || "balance";
+          const mode = requestedMode === "performance" && chartData.performance.length ? "performance" : "balance";
+          chartNode.dataset.chartMode = mode;
+          setModeButtons(chartNode.closest(".card"), mode);
+
+          const colors = themeColors();
+          const chart = window.echarts.getInstanceByDom(chartNode) || window.echarts.init(chartNode);
+
+          if (mode === "performance") {
+            const dates = chartData.performance.map((point) => String(point.date || ""));
             chart.setOption({
               animationDuration: 450,
-              grid: { left: 8, right: 12, top: 16, bottom: 6, containLabel: true },
+              grid: { left: 8, right: 12, top: 28, bottom: 6, containLabel: true },
+              legend: {
+                top: 0,
+                right: 0,
+                textStyle: { color: colors.axis },
+              },
               tooltip: {
                 trigger: "axis",
                 backgroundColor: colors.tooltipBackground,
                 borderColor: colors.grid,
                 textStyle: { color: colors.tooltipText },
-                valueFormatter: (value) => moneyFormatter.format(Number(value || 0)),
+                valueFormatter: formatPercent,
               },
               xAxis: {
                 type: "category",
@@ -219,26 +256,99 @@
                 scale: true,
                 axisLabel: {
                   color: colors.axis,
-                  formatter: (value) => moneyFormatter.format(Number(value || 0)),
+                  formatter: formatPercent,
                 },
                 splitLine: { lineStyle: { color: colors.grid } },
               },
               series: [
                 {
+                  name: "Account",
                   type: "line",
-                  data: values,
+                  data: chartData.performance.map((point) => Number(point.account || 0)),
                   smooth: true,
-                  showSymbol: chartData.length <= 12,
+                  showSymbol: chartData.performance.length <= 12,
                   symbolSize: 6,
-                  lineStyle: { color: lineColor, width: 3 },
-                  itemStyle: { color: lineColor },
-                  areaStyle: { color: `${lineColor}1f` },
+                  lineStyle: { color: "#2563eb", width: 3 },
+                  itemStyle: { color: "#2563eb" },
+                },
+                {
+                  name: chartData.benchmarkSymbol,
+                  type: "line",
+                  data: chartData.performance.map((point) => Number(point.benchmark || 0)),
+                  smooth: true,
+                  showSymbol: chartData.performance.length <= 12,
+                  symbolSize: 6,
+                  lineStyle: { color: "#f59e0b", width: 3 },
+                  itemStyle: { color: "#f59e0b" },
                 },
               ],
-            });
+            }, true);
+            return;
+          }
+
+          const values = chartData.balance.map((point) => Number(point.value || 0));
+          const dates = chartData.balance.map((point) => String(point.date || ""));
+          const isPositive = values[values.length - 1] >= values[0];
+          const lineColor = isPositive ? "#16a34a" : "#dc2626";
+          chart.setOption({
+            animationDuration: 450,
+            grid: { left: 8, right: 12, top: 16, bottom: 6, containLabel: true },
+            legend: { show: false },
+            tooltip: {
+              trigger: "axis",
+              backgroundColor: colors.tooltipBackground,
+              borderColor: colors.grid,
+              textStyle: { color: colors.tooltipText },
+              valueFormatter: (value) => moneyFormatter.format(Number(value || 0)),
+            },
+            xAxis: {
+              type: "category",
+              boundaryGap: false,
+              data: dates,
+              axisLine: { lineStyle: { color: colors.grid } },
+              axisTick: { show: false },
+              axisLabel: { color: colors.axis, hideOverlap: true },
+            },
+            yAxis: {
+              type: "value",
+              scale: true,
+              axisLabel: {
+                color: colors.axis,
+                formatter: (value) => moneyFormatter.format(Number(value || 0)),
+              },
+              splitLine: { lineStyle: { color: colors.grid } },
+            },
+            series: [
+              {
+                name: "Balance",
+                type: "line",
+                data: values,
+                smooth: true,
+                showSymbol: chartData.balance.length <= 12,
+                symbolSize: 6,
+                lineStyle: { color: lineColor, width: 3 },
+                itemStyle: { color: lineColor },
+                areaStyle: { color: `${lineColor}1f` },
+              },
+            ],
+          }, true);
+        };
+
+        const init = (root = document) => {
+          if (!window.echarts) return;
+
+          root.querySelectorAll("[data-account-balance-chart]").forEach((chartNode) => {
+            renderChart(chartNode);
 
             if (!chartNode.dataset.resizeBound) {
-              window.addEventListener("resize", () => chart.resize());
+              const chart = window.echarts.getInstanceByDom(chartNode);
+              chartNode.closest(".card")?.querySelectorAll("[data-chart-mode]").forEach((button) => {
+                button.addEventListener("click", () => {
+                  chartNode.dataset.chartMode = button.dataset.chartMode || "balance";
+                  renderChart(chartNode);
+                });
+              });
+              window.addEventListener("resize", () => chart?.resize());
               chartNode.dataset.resizeBound = "true";
             }
           });
