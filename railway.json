@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "buildCommand": "npm ci && npm run build:css"
+  },
+  "deploy": {
+    "startCommand": "trade-view-serve",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 300
+  }
+}

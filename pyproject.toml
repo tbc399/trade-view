@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 trade-view = "trade_view:main"
+trade-view-serve = "trade_view:serve"
 
 [build-system]
 requires = ["uv_build>=0.12.13,<0.13.0"]

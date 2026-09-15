@@ -40,3 +40,11 @@ During UI work, run the Tailwind/DaisyUI watcher in a separate terminal:
 ```bash
 npm run dev:css
 ```
+
+Deploy to Railway:
+
+1. Create a Railway service from this repository.
+2. Add the variables from `.env.example` in the Railway service Variables tab.
+3. Generate a public domain in the service Networking settings.
+
+The repo includes `railway.json`, which builds the CSS, starts the FastAPI app with `trade-view-serve`, and uses `/health` as the deployment healthcheck. Railway supplies the `PORT` variable automatically.

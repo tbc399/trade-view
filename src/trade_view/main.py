@@ -60,7 +60,7 @@ def initial_preferences() -> AppPreferences:
 
 app_preferences = initial_preferences()
 
-AUTH_EXEMPT_PATHS = {"/login", "/favicon.ico"}
+AUTH_EXEMPT_PATHS = {"/health", "/login", "/favicon.ico"}
 
 
 NAV_ITEMS = [
@@ -380,6 +380,11 @@ async def require_login(request: Request, call_next):
         return redirect_to_login(request)
 
     return await call_next(request)
+
+
+@app.get("/health", include_in_schema=False)
+async def health():
+    return {"status": "ok"}
 
 
 @app.get("/login", response_class=HTMLResponse)
