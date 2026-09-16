@@ -2368,11 +2368,17 @@
   .h-72 {
     height: calc(var(--spacing) * 72);
   }
+  .h-96 {
+    height: calc(var(--spacing) * 96);
+  }
   .h-full {
     height: 100%;
   }
   .min-h-72 {
     min-height: calc(var(--spacing) * 72);
+  }
+  .min-h-96 {
+    min-height: calc(var(--spacing) * 96);
   }
   .min-h-screen {
     min-height: 100vh;
@@ -2785,8 +2791,24 @@
       color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
     }
   }
+  .text-error {
+    color: var(--color-error);
+  }
+  .text-success {
+    color: var(--color-success);
+  }
   .uppercase {
     text-transform: uppercase;
+  }
+  @layer daisyui.l1.l2 {
+    .link-hover {
+      text-decoration-line: none;
+    }
+    @media (hover: hover) {
+      .link-hover:hover {
+        text-decoration-line: underline;
+      }
+    }
   }
   .shadow {
     --tw-shadow: 0 1px 3px 0 var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 1px 2px -1px var(--tw-shadow-color, rgb(0 0 0 / 0.1));

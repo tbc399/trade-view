@@ -334,6 +334,144 @@
           }, true);
         };
 
+        const renderCandleChart = (chartNode) => {
+          const container = chartNode.parentElement;
+          const chartData = parseJson(
+            container?.querySelector("[data-position-candle-chart-data]"),
+            [],
+          );
+          if (!Array.isArray(chartData) || !chartData.length) return;
+          const meta = parseJson(container?.querySelector("[data-position-candle-chart-meta]"), {});
+
+          const colors = themeColors();
+          const chart = window.echarts.getInstanceByDom(chartNode) || window.echarts.init(chartNode);
+          const dates = chartData.map((point) => String(point.date || ""));
+          const candleValues = chartData.map((point) => [
+            Number(point.open || 0),
+            Number(point.close || 0),
+            Number(point.low || 0),
+            Number(point.high || 0),
+          ]);
+          const volumes = chartData.map((point) => Number(point.volume || 0));
+          const entryPrice = Number(meta.entry_price);
+          const hasEntryPrice = Number.isFinite(entryPrice) && entryPrice > 0;
+          const entryMarkerDate = dates.includes(meta.entry_marker_date) ? meta.entry_marker_date : null;
+          const entryLabel = meta.entry_price_display ? `Entry ${meta.entry_price_display}` : "Entry";
+          const entryLine = hasEntryPrice ? {
+            silent: false,
+            symbol: "none",
+            label: {
+              show: false,
+              formatter: entryLabel,
+            },
+            lineStyle: {
+              color: "#6366f1",
+              width: 1.5,
+              type: "dashed",
+            },
+            tooltip: {
+              formatter: () => `${entryLabel}<br>${meta.entry_date || ""}`,
+            },
+            data: [{ name: entryLabel, yAxis: entryPrice }],
+          } : undefined;
+          const entryMarkerSeries = hasEntryPrice && entryMarkerDate ? [{
+            name: "Entry",
+            type: "scatter",
+            data: [[entryMarkerDate, entryPrice]],
+            symbol: "circle",
+            symbolSize: 6,
+            itemStyle: {
+              color: "#6366f1",
+              borderColor: colors.tooltipText,
+              borderWidth: 1,
+            },
+            tooltip: {
+              formatter: () => `${entryLabel}<br>${entryMarkerDate}`,
+            },
+            z: 5,
+          }] : [];
+
+          chart.setOption({
+            animationDuration: 450,
+            grid: [
+              { left: 8, right: 12, top: 16, height: "68%", containLabel: true },
+              { left: 8, right: 12, top: "78%", height: "14%", containLabel: true },
+            ],
+            tooltip: {
+              trigger: "axis",
+              axisPointer: { type: "cross" },
+              backgroundColor: colors.tooltipBackground,
+              borderColor: colors.grid,
+              textStyle: { color: colors.tooltipText },
+            },
+            xAxis: [
+              {
+                type: "category",
+                data: dates,
+                boundaryGap: true,
+                axisLine: { lineStyle: { color: colors.grid } },
+                axisTick: { show: false },
+                axisLabel: { color: colors.axis, hideOverlap: true },
+              },
+              {
+                type: "category",
+                data: dates,
+                gridIndex: 1,
+                boundaryGap: true,
+                axisLine: { lineStyle: { color: colors.grid } },
+                axisTick: { show: false },
+                axisLabel: { show: false },
+              },
+            ],
+            yAxis: [
+              {
+                scale: true,
+                position: "right",
+                axisLabel: {
+                  color: colors.axis,
+                  formatter: (value) => moneyFormatter.format(Number(value || 0)),
+                },
+                splitLine: { lineStyle: { color: colors.grid } },
+              },
+              {
+                scale: true,
+                gridIndex: 1,
+                axisLabel: { show: false },
+                axisLine: { show: false },
+                axisTick: { show: false },
+                splitLine: { show: false },
+              },
+            ],
+            dataZoom: [
+              { type: "inside", xAxisIndex: [0, 1], start: 0, end: 100 },
+              { type: "slider", xAxisIndex: [0, 1], bottom: 0, height: 18, start: 0, end: 100 },
+            ],
+            series: [
+              {
+                name: "OHLC",
+                type: "candlestick",
+                data: candleValues,
+                itemStyle: {
+                  color: "#16a34a",
+                  color0: "#dc2626",
+                  borderColor: "#16a34a",
+                  borderColor0: "#dc2626",
+                },
+                markLine: entryLine,
+              },
+              {
+                name: "Volume",
+                type: "bar",
+                xAxisIndex: 1,
+                yAxisIndex: 1,
+                data: volumes,
+                itemStyle: { color: "rgba(107, 114, 128, 0.45)" },
+              },
+              ...entryMarkerSeries,
+            ],
+          }, true);
+        };
+
         const init = (root = document) => {
           if (!window.echarts) return;
 
@@ -348,6 +486,16 @@
                   renderChart(chartNode);
                 });
               });
+              window.addEventListener("resize", () => chart?.resize());
+              chartNode.dataset.resizeBound = "true";
+            }
+          });
+
+          root.querySelectorAll("[data-position-candle-chart]").forEach((chartNode) => {
+            renderCandleChart(chartNode);
+
+            if (!chartNode.dataset.resizeBound) {
+              const chart = window.echarts.getInstanceByDom(chartNode);
               window.addEventListener("resize", () => chart?.resize());
               chartNode.dataset.resizeBound = "true";
             }

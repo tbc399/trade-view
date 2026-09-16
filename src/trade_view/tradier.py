@@ -27,6 +27,12 @@ class DisplayPosition:
     name: str
     cost_basis: str
     shares: str
+    acquired_date: str
+    acquired_date_value: str
+    entry_price: str
+    entry_price_value: float | None
+    last_price: str
+    current_value: str
     held_market_days: str
     exit_quantity: str
     pnl_dollars: str
@@ -63,6 +69,16 @@ class DisplayHistoricalPricePoint:
     date: str
     close: Decimal
     close_display: str
+
+
+@dataclass(frozen=True)
+class DisplayHistoricalCandlePoint:
+    date: str
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: int | None
 
 
 @dataclass(frozen=True)
@@ -237,6 +253,11 @@ def historical_price_sort_key(point: DisplayHistoricalPricePoint) -> tuple[bool,
     return price_date is None, price_date or date.max
 
 
+def historical_candle_sort_key(point: DisplayHistoricalCandlePoint) -> tuple[bool, date]:
+    candle_date = to_date(point.date)
+    return candle_date is None, candle_date or date.max
+
+
 class TradierClient:
     def __init__(
         self,
@@ -355,6 +376,30 @@ class TradierClient:
             if (point := self.to_display_historical_price_point(price)) is not None
         ]
         return sorted(points, key=historical_price_sort_key)
+
+    async def get_historical_candles(
+        self,
+        symbol: str,
+        start: date,
+        end: date,
+    ) -> list[DisplayHistoricalCandlePoint]:
+        if not self.settings.has_tradier_token:
+            raise TradierCredentialsMissing("Tradier API token is not configured.")
+
+        async with httpx.AsyncClient(
+            base_url=self.settings.base_url.rstrip("/"),
+            headers=self.headers,
+            timeout=self.settings.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            raw_prices = await self.get_market_history(client, symbol, start, end)
+
+        points = [
+            point
+            for price in raw_prices
+            if (point := self.to_display_historical_candle_point(price)) is not None
+        ]
+        return sorted(points, key=historical_candle_sort_key)
 
     async def preview_long_equity_position(
         self,
@@ -741,6 +786,10 @@ class TradierClient:
         current_value: Decimal | None = None
         pnl: Decimal | None = None
         pnl_percent: Decimal | None = None
+        entry_price: Decimal | None = None
+        if quantity is not None and quantity != 0 and cost_basis is not None and multiplier > 0:
+            entry_price = abs(cost_basis) / abs(quantity) / multiplier
+
         if quantity is not None and cost_basis is not None and last is not None:
             current_value = quantity * last * multiplier
             pnl = current_value - cost_basis
@@ -752,6 +801,12 @@ class TradierClient:
             name=str(quote.get("description") or symbol),
             cost_basis=format_money(cost_basis),
             shares=format_quantity(quantity),
+            acquired_date=acquired_date.isoformat() if acquired_date else "--",
+            acquired_date_value=acquired_date.isoformat() if acquired_date else "",
+            entry_price=format_money(entry_price),
+            entry_price_value=float(entry_price) if entry_price is not None else None,
+            last_price=format_money(last),
+            current_value=format_money(current_value),
             held_market_days=format_market_days_held(acquired_date, market_days),
             exit_quantity=format_quantity(quantity),
             pnl_dollars=format_signed_money(pnl),
@@ -802,6 +857,34 @@ class TradierClient:
             date=price_date[:10],
             close=close,
             close_display=format_money(close),
+        )
+
+    def to_display_historical_candle_point(
+        self,
+        price: dict[str, Any],
+    ) -> DisplayHistoricalCandlePoint | None:
+        price_date = str(price.get("date") or "")
+        open_price = to_decimal(price.get("open"))
+        high = to_decimal(price.get("high"))
+        low = to_decimal(price.get("low"))
+        close = to_decimal(price.get("close"))
+        if not price_date or None in (open_price, high, low, close):
+            return None
+
+        volume = None
+        try:
+            if price.get("volume") not in (None, ""):
+                volume = int(price["volume"])
+        except (TypeError, ValueError):
+            volume = None
+
+        return DisplayHistoricalCandlePoint(
+            date=price_date[:10],
+            open=open_price,
+            high=high,
+            low=low,
+            close=close,
+            volume=volume,
         )
 
     def to_display_watchlist_item(

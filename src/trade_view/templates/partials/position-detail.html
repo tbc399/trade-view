@@ -1,0 +1,91 @@
+<section class="space-y-6">
+  <div class="flex flex-col gap-4 rounded-box border border-base-300 bg-base-100 p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+    <div>
+      <div class="badge badge-primary badge-outline mb-3">Position detail</div>
+      <h1 class="text-3xl font-semibold">{{ position_symbol }}</h1>
+      <p class="mt-2 max-w-2xl text-sm text-base-content/65">
+        {% if position %}{{ position.name }}{% else %}Current holding details and six months of daily candles.{% endif %}
+      </p>
+    </div>
+    <button
+      class="btn btn-outline"
+      hx-get="/partials/positions"
+      hx-target="#main-content"
+      hx-swap="innerHTML"
+      hx-push-url="/positions"
+      type="button"
+    >
+      Back to Positions
+    </button>
+  </div>
+
+  {% if positions_error %}
+    <div class="alert alert-warning border border-warning/30 shadow-sm">
+      <span>{{ positions_error }}</span>
+    </div>
+  {% endif %}
+
+  {% if position %}
+    <div class="stats stats-vertical w-full border border-base-300 bg-base-100 shadow-sm lg:stats-horizontal">
+      <div class="stat">
+        <div class="stat-title">Shares</div>
+        <div class="stat-value text-2xl">{{ position.shares }}</div>
+        <div class="stat-desc">current quantity</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">Cost Basis</div>
+        <div class="stat-value text-2xl">{{ position.cost_basis }}</div>
+        <div class="stat-desc">entry {{ position.entry_price }} on {{ position.acquired_date }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">Market Value</div>
+        <div class="stat-value text-2xl">{{ position.current_value }}</div>
+        <div class="stat-desc">last {{ position.last_price }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-title">Open P&amp;L</div>
+        <div class="stat-value text-2xl {% if position.pnl_value >= 0 %}text-success{% else %}text-error{% endif %}">
+          {{ position.pnl_dollars }}
+        </div>
+        <div class="stat-desc {% if position.pnl_value >= 0 %}text-success{% else %}text-error{% endif %}">
+          {{ position.pnl_percent }} over {{ position.held_market_days }} market days
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <section class="card border border-base-300 bg-base-100 shadow-sm">
+    <div class="card-body gap-5">
+      <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 class="text-base font-semibold">{{ position_symbol }} Candles</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Daily open, high, low, and close from {{ candle_start_date }} through {{ candle_end_date }}.
+          </p>
+        </div>
+        <a
+          class="btn btn-sm btn-outline"
+          href="https://finviz.com/quote.ashx?t={{ position_symbol }}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Finviz
+        </a>
+      </div>
+
+      {% if candle_error %}
+        <div class="alert alert-warning border border-warning/30 shadow-sm">
+          <span>{{ candle_error }}</span>
+        </div>
+      {% elif candle_chart_data %}
+        <div class="h-96 min-h-96 w-full" data-position-candle-chart></div>
+        <script type="application/json" data-position-candle-chart-data>{{ candle_chart_data | tojson }}</script>
+        <script type="application/json" data-position-candle-chart-meta>{{ candle_chart_meta | tojson }}</script>
+      {% else %}
+        <div class="rounded-box border border-dashed border-base-300 bg-base-200 p-5 text-sm text-base-content/65">
+          No candle data to chart for {{ position_symbol }}.
+        </div>
+      {% endif %}
+    </div>
+  </section>
+</section>

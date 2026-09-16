@@ -1,5 +1,7 @@
 import asyncio
+from calendar import monthrange
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import quote
@@ -20,13 +22,16 @@ from trade_view.auth import (
 from trade_view.config import get_settings
 from trade_view.tradier import (
     DisplayHistoricalBalancePoint,
+    DisplayHistoricalCandlePoint,
     DisplayHistoricalPricePoint,
+    DisplayPosition,
     PlacedEquityOrder,
     PreviewedEquityOrder,
     TradierAPIError,
     TradierClient,
     TradierCredentialsMissing,
     TradierOrderSizingError,
+    current_market_date,
     format_percent,
     format_signed_money,
     to_date,
@@ -197,6 +202,62 @@ def account_balance_chart_data(
     return [{"date": point.date, "value": float(point.value)} for point in points]
 
 
+def candle_chart_data(
+    points: list[DisplayHistoricalCandlePoint],
+) -> list[dict[str, float | int | str | None]]:
+    return [
+        {
+            "date": point.date,
+            "open": float(point.open),
+            "high": float(point.high),
+            "low": float(point.low),
+            "close": float(point.close),
+            "volume": point.volume,
+        }
+        for point in points
+    ]
+
+
+def candle_chart_meta(
+    position: DisplayPosition | None,
+    points: list[DisplayHistoricalCandlePoint],
+) -> dict[str, float | str | None]:
+    if position is None or position.entry_price_value is None:
+        return {}
+
+    acquired_date = to_date(position.acquired_date_value)
+    marker_date = None
+    if acquired_date is not None:
+        candle_dates = [
+            (candle_date, point.date)
+            for point in points
+            if (candle_date := to_date(point.date)) is not None
+        ]
+        marker_date = next(
+            (
+                candle_date_text
+                for candle_date, candle_date_text in sorted(candle_dates, key=lambda item: item[0])
+                if candle_date >= acquired_date
+            ),
+            None,
+        )
+
+    return {
+        "entry_price": position.entry_price_value,
+        "entry_price_display": position.entry_price,
+        "entry_date": position.acquired_date_value,
+        "entry_marker_date": marker_date,
+    }
+
+
+def subtract_months(value: date, months: int) -> date:
+    month_index = value.month - 1 - months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return date(year, month, day)
+
+
 def performance_chart_data(
     balance_points: list[DisplayHistoricalBalancePoint],
     benchmark_points: list[DisplayHistoricalPricePoint],
@@ -269,6 +330,14 @@ def finviz_watchlist_url(watchlists: list) -> str:
         return ""
 
     return f"https://finviz.com/screener.ashx?v=211&t={quote(','.join(symbols), safe=',')}"
+
+
+def find_position(positions: list[DisplayPosition], symbol: str) -> DisplayPosition | None:
+    normalized_symbol = symbol.upper()
+    return next(
+        (position for position in positions if position.symbol.upper() == normalized_symbol),
+        None,
+    )
 
 
 def page_context(
@@ -623,6 +692,66 @@ async def positions_context(
     )
 
 
+async def position_detail_context(request: Request, symbol: str) -> dict:
+    settings = get_settings()
+    symbol = parse_symbol(symbol)
+    positions = []
+    position = None
+    positions_error = ""
+    candle_points = []
+    candle_error = ""
+    end_date = current_market_date()
+    start_date = subtract_months(end_date, 6)
+
+    try:
+        positions = await TradierClient(settings).get_positions()
+        position = find_position(positions, symbol)
+        if position is None:
+            positions_error = f"{symbol} is not an open position."
+    except TradierCredentialsMissing:
+        positions_error = "Add TRADIER_ACCOUNT_ID and TRADIER_API_TOKEN to your .env file to load live positions."
+    except TradierAPIError as exc:
+        positions_error = str(exc)
+    except Exception:
+        positions_error = "Unable to load Tradier positions right now."
+
+    try:
+        candle_points = await TradierClient(settings).get_historical_candles(
+            symbol,
+            start_date,
+            end_date,
+        )
+        if not candle_points:
+            candle_error = f"No daily candles were available for {symbol}."
+    except TradierCredentialsMissing:
+        candle_error = "Add TRADIER_API_TOKEN to load daily candles."
+    except TradierAPIError as exc:
+        candle_error = str(exc)
+    except Exception:
+        candle_error = f"Unable to load {symbol} candle history right now."
+
+    context = page_context(
+        request,
+        "positions",
+        positions=positions,
+        positions_error=positions_error,
+    )
+    context.update(
+        {
+            "title": f"{symbol} | Positions | Trade View",
+            "partial_template": "partials/position-detail.html",
+            "position": position,
+            "position_symbol": symbol,
+            "candle_chart_data": candle_chart_data(candle_points),
+            "candle_chart_meta": candle_chart_meta(position, candle_points),
+            "candle_error": candle_error,
+            "candle_start_date": start_date.isoformat(),
+            "candle_end_date": end_date.isoformat(),
+        }
+    )
+    return context
+
+
 async def watchlist_context(
     request: Request,
     watchlists_message: str = "",
@@ -798,6 +927,15 @@ async def read_positions(request: Request):
     return templates.TemplateResponse(request, "index.html", await positions_context(request))
 
 
+@app.get("/positions/{symbol}", response_class=HTMLResponse)
+async def read_position_detail(request: Request, symbol: str):
+    try:
+        context = await position_detail_context(request, symbol)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Position not found") from None
+    return templates.TemplateResponse(request, "index.html", context)
+
+
 @app.post("/positions/entry", response_class=HTMLResponse)
 async def create_position_entry(request: Request):
     form = await request.form()
@@ -933,6 +1071,15 @@ async def update_defaults(request: Request):
 @app.get("/alerts", include_in_schema=False)
 async def redirect_alerts():
     return RedirectResponse(url="/settings", status_code=308)
+
+
+@app.get("/partials/positions/{symbol}", response_class=HTMLResponse)
+async def read_position_detail_partial(request: Request, symbol: str):
+    try:
+        context = await position_detail_context(request, symbol)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Position not found") from None
+    return templates.TemplateResponse(request, context["partial_template"], context)
 
 
 @app.get("/partials/{section_key}", response_class=HTMLResponse)
