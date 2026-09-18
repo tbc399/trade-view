@@ -81,6 +81,104 @@
         <div class="h-96 min-h-96 w-full" data-position-candle-chart></div>
         <script type="application/json" data-position-candle-chart-data>{{ candle_chart_data | tojson }}</script>
         <script type="application/json" data-position-candle-chart-meta>{{ candle_chart_meta | tojson }}</script>
+        {% if pending_guard_orders_error %}
+          <div class="alert alert-warning border border-warning/30 shadow-sm">
+            <span>{{ pending_guard_orders_error }}</span>
+          </div>
+        {% endif %}
+        {% if position %}
+          <div class="grid gap-5 border-t border-base-300 pt-5 xl:grid-cols-[minmax(0,1fr)_18rem]">
+            <form
+              class="space-y-4"
+              hx-post="{% if pending_target_order and pending_stop_order %}/positions/{{ position_symbol }}/bracket/update{% else %}/positions/{{ position_symbol }}/bracket/preview{% endif %}"
+              hx-target="#position-bracket-result"
+              hx-swap="innerHTML"
+              {% if pending_target_order and pending_stop_order %}
+                hx-confirm="Update the active OCO guard orders for {{ position_symbol }}?"
+              {% endif %}
+            >
+              <input type="hidden" name="quantity" value="{{ position.exit_quantity }}">
+              {% if pending_target_order and pending_stop_order %}
+                <input type="hidden" name="target_order_id" value="{{ pending_target_order.order_id }}">
+                <input type="hidden" name="stop_order_id" value="{{ pending_stop_order.order_id }}">
+              {% endif %}
+              <div class="flex flex-col gap-3 lg:flex-row lg:items-end">
+                <label class="form-control flex-1">
+                  <span class="label-text">Take Profit</span>
+                  <input
+                    class="input input-bordered w-full font-mono"
+                    data-bracket-price="take_profit"
+                    inputmode="decimal"
+                    name="take_profit_price"
+                    placeholder="0.00"
+                    type="text"
+                    value="{% if pending_target_order %}{{ '%.2f'|format(pending_target_order.price_value) }}{% endif %}"
+                  >
+                </label>
+                <label class="form-control flex-1">
+                  <span class="label-text">Stop Loss</span>
+                  <input
+                    class="input input-bordered w-full font-mono"
+                    data-bracket-price="stop_loss"
+                    inputmode="decimal"
+                    name="stop_loss_price"
+                    placeholder="0.00"
+                    type="text"
+                    value="{% if pending_stop_order %}{{ '%.2f'|format(pending_stop_order.price_value) }}{% endif %}"
+                  >
+                </label>
+                <label class="form-control w-full lg:w-32">
+                  <span class="label-text">Duration</span>
+                  <select class="select select-bordered w-full" name="duration">
+                    <option value="gtc" {% if not pending_target_order or pending_target_order.duration == "GTC" %}selected{% endif %}>GTC</option>
+                    <option value="day" {% if pending_target_order and pending_target_order.duration == "DAY" %}selected{% endif %}>Day</option>
+                  </select>
+                </label>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button class="btn btn-sm btn-success btn-outline" data-bracket-pick="take_profit" type="button">
+                  Pick Target
+                </button>
+                <button class="btn btn-sm btn-error btn-outline" data-bracket-pick="stop_loss" type="button">
+                  Pick Stop
+                </button>
+                <button class="btn btn-primary btn-sm ml-auto" type="submit">
+                  {% if pending_target_order and pending_stop_order %}Update Guards{% else %}Preview Bracket{% endif %}
+                </button>
+              </div>
+            </form>
+
+            <div class="rounded-box border border-base-300 bg-base-200 p-4 text-sm text-base-content/65">
+              <div class="font-medium text-base-content">OCO guard order</div>
+              <p class="mt-2">
+                Select a target or stop, then click a level on the chart to fill the price.
+              </p>
+              <p class="mt-2">
+                {% if pending_target_order and pending_stop_order %}
+                  Updating modifies the active Tradier stop and limit legs in place.
+                {% else %}
+                  Preview validates the pair with Tradier before anything is submitted.
+                {% endif %}
+              </p>
+              {% if pending_guard_orders %}
+                <div class="mt-4 border-t border-base-300 pt-3">
+                  <div class="font-medium text-base-content">Pending guards</div>
+                  <div class="mt-2 space-y-2">
+                    {% for order in pending_guard_orders %}
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="{% if order.kind == 'stop' %}text-error{% else %}text-success{% endif %}">
+                          {{ order.label }}
+                        </span>
+                        <span class="font-mono text-base-content">{{ order.price }}</span>
+                      </div>
+                    {% endfor %}
+                  </div>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+          <div id="position-bracket-result"></div>
+        {% endif %}
       {% else %}
         <div class="rounded-box border border-dashed border-base-300 bg-base-200 p-5 text-sm text-base-content/65">
           No candle data to chart for {{ position_symbol }}.

@@ -357,22 +357,104 @@
           const hasEntryPrice = Number.isFinite(entryPrice) && entryPrice > 0;
           const entryMarkerDate = dates.includes(meta.entry_marker_date) ? meta.entry_marker_date : null;
           const entryLabel = meta.entry_price_display ? `Entry ${meta.entry_price_display}` : "Entry";
-          const entryLine = hasEntryPrice ? {
+          const parseBracketPrice = (name) => {
+            const input = container?.querySelector(`[data-bracket-price="${name}"]`);
+            const value = Number(String(input?.value || "").replace(/[$,]/g, ""));
+            return Number.isFinite(value) && value > 0 ? value : null;
+          };
+          const takeProfitPrice = parseBracketPrice("take_profit");
+          const stopLossPrice = parseBracketPrice("stop_loss");
+          const pendingGuardOrders = Array.isArray(meta.pending_guard_orders)
+            ? meta.pending_guard_orders
+            : [];
+          const hasPendingAt = (kind, price) => pendingGuardOrders.some((order) => {
+            const pendingPrice = Number(order.price);
+            return order.kind === kind && Number.isFinite(pendingPrice) && Math.abs(pendingPrice - price) < 0.005;
+          });
+          const markLineData = [];
+
+          if (hasEntryPrice) {
+            markLineData.push({
+              name: entryLabel,
+              yAxis: entryPrice,
+              label: { show: false },
+              lineStyle: {
+                color: "#6366f1",
+                width: 1.5,
+                type: "dashed",
+              },
+            });
+          }
+
+          if (takeProfitPrice && !hasPendingAt("target", takeProfitPrice)) {
+            markLineData.push({
+              name: "Target",
+              yAxis: takeProfitPrice,
+              label: { show: true, formatter: "Target" },
+              lineStyle: {
+                color: "#16a34a",
+                width: 1.5,
+                type: "dashed",
+              },
+            });
+          }
+
+          pendingGuardOrders.forEach((order) => {
+            const price = Number(order.price);
+            if (!Number.isFinite(price) || price <= 0) return;
+
+            const isStop = order.kind === "stop";
+            markLineData.push({
+              name: order.label || (isStop ? "Pending Stop" : "Pending Target"),
+              yAxis: price,
+              label: {
+                show: true,
+                formatter: isStop ? "Pending Stop" : "Pending Target",
+              },
+              lineStyle: {
+                color: isStop ? "#ef4444" : "#22c55e",
+                width: 2,
+                type: "solid",
+              },
+            });
+          });
+
+          if (stopLossPrice && !hasPendingAt("stop", stopLossPrice)) {
+            markLineData.push({
+              name: "Stop",
+              yAxis: stopLossPrice,
+              label: { show: true, formatter: "Stop" },
+              lineStyle: {
+                color: "#dc2626",
+                width: 1.5,
+                type: "dashed",
+              },
+            });
+          }
+
+          const guardLines = markLineData.length ? {
             silent: false,
             symbol: "none",
-            label: {
-              show: false,
-              formatter: entryLabel,
-            },
-            lineStyle: {
-              color: "#6366f1",
-              width: 1.5,
-              type: "dashed",
-            },
+            precision: 2,
             tooltip: {
-              formatter: () => `${entryLabel}<br>${meta.entry_date || ""}`,
+              formatter: (params) => {
+                const price = Number(params.value || params.data?.yAxis || 0);
+                const matchingOrder = pendingGuardOrders.find(
+                  (order) => order.label === params.name && Math.abs(Number(order.price) - price) < 0.005,
+                );
+                if (!matchingOrder) {
+                  return `${params.name}<br>${moneyFormatter.format(price)}`;
+                }
+
+                return [
+                  params.name,
+                  matchingOrder.price_display || moneyFormatter.format(price),
+                  `${matchingOrder.quantity || "--"} shares`,
+                  `${matchingOrder.status || "Pending"} ${matchingOrder.duration || ""}`.trim(),
+                ].join("<br>");
+              },
             },
-            data: [{ name: entryLabel, yAxis: entryPrice }],
+            data: markLineData,
           } : undefined;
           const entryMarkerSeries = hasEntryPrice && entryMarkerDate ? [{
             name: "Entry",
@@ -457,7 +539,7 @@
                   borderColor: "#16a34a",
                   borderColor0: "#dc2626",
                 },
-                markLine: entryLine,
+                markLine: guardLines,
               },
               {
                 name: "Volume",
@@ -470,6 +552,54 @@
               ...entryMarkerSeries,
             ],
           }, true);
+        };
+
+        const syncBracketPickButtons = (container, mode) => {
+          container?.querySelectorAll("[data-bracket-pick]").forEach((button) => {
+            const active = button.dataset.bracketPick === mode;
+            button.classList.toggle("btn-active", active);
+            button.setAttribute("aria-pressed", active ? "true" : "false");
+          });
+        };
+
+        const bindBracketControls = (chartNode) => {
+          if (chartNode.dataset.bracketControlsBound) return;
+
+          const container = chartNode.parentElement;
+          const chart = window.echarts.getInstanceByDom(chartNode);
+          if (!container || !chart) return;
+
+          container.querySelectorAll("[data-bracket-pick]").forEach((button) => {
+            button.addEventListener("click", () => {
+              const nextMode = button.dataset.bracketPick || "";
+              chartNode.dataset.bracketPickMode = chartNode.dataset.bracketPickMode === nextMode ? "" : nextMode;
+              syncBracketPickButtons(container, chartNode.dataset.bracketPickMode);
+            });
+          });
+
+          container.querySelectorAll("[data-bracket-price]").forEach((input) => {
+            input.addEventListener("input", () => renderCandleChart(chartNode));
+          });
+
+          chart.getZr().on("click", (event) => {
+            const mode = chartNode.dataset.bracketPickMode;
+            if (!mode) return;
+
+            const pixel = [event.offsetX, event.offsetY];
+            if (!chart.containPixel({ gridIndex: 0 }, pixel)) return;
+
+            const point = chart.convertFromPixel({ gridIndex: 0 }, pixel);
+            const price = Number(point?.[1]);
+            if (!Number.isFinite(price) || price <= 0) return;
+
+            const input = container.querySelector(`[data-bracket-price="${mode}"]`);
+            if (!input) return;
+
+            input.value = price.toFixed(2);
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+          });
+
+          chartNode.dataset.bracketControlsBound = "true";
         };
 
         const init = (root = document) => {
@@ -493,6 +623,7 @@
 
           root.querySelectorAll("[data-position-candle-chart]").forEach((chartNode) => {
             renderCandleChart(chartNode);
+            bindBracketControls(chartNode);
 
             if (!chartNode.dataset.resizeBound) {
               const chart = window.echarts.getInstanceByDom(chartNode);

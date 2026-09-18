@@ -58,6 +58,13 @@ class DisplayWatchlist:
 
 
 @dataclass(frozen=True)
+class DisplayAccountBalanceMetric:
+    label: str
+    value: str
+    detail: str
+
+
+@dataclass(frozen=True)
 class DisplayHistoricalBalancePoint:
     date: str
     value: Decimal
@@ -92,6 +99,32 @@ class PlacedEquityOrder:
     position_size_percent: str
     order_id: str
     status: str
+
+
+@dataclass(frozen=True)
+class DisplayBracketOrder:
+    symbol: str
+    quantity: str
+    side: str
+    take_profit_price: str
+    stop_loss_price: str
+    duration: str
+    order_id: str
+    status: str
+
+
+@dataclass(frozen=True)
+class DisplayPendingGuardOrder:
+    label: str
+    kind: str
+    symbol: str
+    quantity: str
+    side: str
+    price: str
+    price_value: float
+    order_id: str
+    status: str
+    duration: str
 
 
 @dataclass(frozen=True)
@@ -161,6 +194,12 @@ def format_quantity(value: Decimal | None) -> str:
         return "--"
     normalized = value.normalize()
     return f"{normalized:f}"
+
+
+def format_order_price(value: Decimal | None) -> str:
+    if value is None:
+        return "--"
+    return f"{value.quantize(Decimal('0.01')):f}"
 
 
 def to_date(value: Any) -> date | None:
@@ -241,6 +280,45 @@ HISTORICAL_BALANCE_VALUE_KEYS = (
     "equity",
     "account_value",
 )
+ACTIVE_ORDER_STATUSES = ("pending", "open", "partially_filled")
+EXIT_ORDER_SIDES = {"sell", "buy_to_cover"}
+ACCOUNT_BALANCE_METRIC_DEFINITIONS = (
+    (
+        "Account Equity",
+        ("total_equity", "equity"),
+        "Total account value",
+    ),
+    (
+        "Available Cash",
+        ("cash.cash_available", "cash_available", "available_cash"),
+        "Cash available to trade",
+    ),
+    (
+        "Settled Cash",
+        ("total_cash", "cash.total_cash", "settled_cash", "cash.settled_cash", "cash.sweep"),
+        "Settled cash balance",
+    ),
+    (
+        "Cash",
+        ("total_cash", "cash.total_cash"),
+        "Cash balance",
+    ),
+    (
+        "Market Value",
+        ("market_value", "long_market_value", "stock_long_value"),
+        "Current position value",
+    ),
+    (
+        "Buying Power",
+        (
+            "margin.stock_buying_power",
+            "pdt.day_trade_buying_power",
+            "cash.cash_available",
+            "cash_available",
+        ),
+        "Tradier buying power",
+    ),
+)
 
 
 def historical_balance_sort_key(point: DisplayHistoricalBalancePoint) -> tuple[bool, date]:
@@ -256,6 +334,28 @@ def historical_price_sort_key(point: DisplayHistoricalPricePoint) -> tuple[bool,
 def historical_candle_sort_key(point: DisplayHistoricalCandlePoint) -> tuple[bool, date]:
     candle_date = to_date(point.date)
     return candle_date is None, candle_date or date.max
+
+
+def nested_value(data: dict[str, Any], path: str) -> Any:
+    value: Any = data
+    for key in path.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
+
+
+def first_decimal_for_paths(data: dict[str, Any], paths: tuple[str, ...]) -> Decimal | None:
+    for path in paths:
+        value = nested_value(data, path)
+        if value in (None, ""):
+            continue
+
+        decimal_value = to_decimal(value)
+        if decimal_value is not None:
+            return decimal_value
+
+    return None
 
 
 class TradierClient:
@@ -352,6 +452,20 @@ class TradierClient:
             if (point := self.to_display_historical_balance_point(balance)) is not None
         ]
         return sorted(points, key=historical_balance_sort_key)
+
+    async def get_account_balance_metrics(self) -> list[DisplayAccountBalanceMetric]:
+        if not self.settings.has_tradier_credentials:
+            raise TradierCredentialsMissing("Tradier account ID and API token are not configured.")
+
+        async with httpx.AsyncClient(
+            base_url=self.settings.base_url.rstrip("/"),
+            headers=self.headers,
+            timeout=self.settings.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            balances = await self.get_account_balances(client)
+
+        return self.to_display_account_balance_metrics(balances)
 
     async def get_historical_prices(
         self,
@@ -506,6 +620,153 @@ class TradierClient:
             status=str(order.get("status") or "submitted"),
         )
 
+    async def preview_position_bracket_order(
+        self,
+        symbol: str,
+        quantity: Decimal,
+        take_profit_price: Decimal,
+        stop_loss_price: Decimal,
+        duration: str,
+    ) -> DisplayBracketOrder:
+        return await self.place_position_bracket_order(
+            symbol,
+            quantity,
+            take_profit_price,
+            stop_loss_price,
+            duration,
+            preview=True,
+        )
+
+    async def submit_position_bracket_order(
+        self,
+        symbol: str,
+        quantity: Decimal,
+        take_profit_price: Decimal,
+        stop_loss_price: Decimal,
+        duration: str,
+    ) -> DisplayBracketOrder:
+        return await self.place_position_bracket_order(
+            symbol,
+            quantity,
+            take_profit_price,
+            stop_loss_price,
+            duration,
+            preview=False,
+        )
+
+    async def place_position_bracket_order(
+        self,
+        symbol: str,
+        quantity: Decimal,
+        take_profit_price: Decimal,
+        stop_loss_price: Decimal,
+        duration: str,
+        preview: bool,
+    ) -> DisplayBracketOrder:
+        if not self.settings.has_tradier_credentials:
+            raise TradierCredentialsMissing("Tradier account ID and API token are not configured.")
+
+        self.validate_bracket_order(quantity, take_profit_price, stop_loss_price)
+        side = "sell" if quantity > 0 else "buy_to_cover"
+        exit_quantity = abs(quantity)
+
+        async with httpx.AsyncClient(
+            base_url=self.settings.base_url.rstrip("/"),
+            headers=self.headers,
+            timeout=self.settings.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            order = await self.place_oco_equity_order(
+                client,
+                symbol,
+                side,
+                exit_quantity,
+                take_profit_price,
+                stop_loss_price,
+                duration,
+                preview,
+            )
+
+        return DisplayBracketOrder(
+            symbol=symbol,
+            quantity=format_quantity(exit_quantity),
+            side=side,
+            take_profit_price=format_money(take_profit_price),
+            stop_loss_price=format_money(stop_loss_price),
+            duration=duration.upper(),
+            order_id=str(order.get("id") or order.get("order_id") or order.get("preview_id") or "--"),
+            status=str(order.get("status") or "ok"),
+        )
+
+    async def get_pending_guard_orders(self, symbol: str) -> list[DisplayPendingGuardOrder]:
+        if not self.settings.has_tradier_credentials:
+            raise TradierCredentialsMissing("Tradier account ID and API token are not configured.")
+
+        async with httpx.AsyncClient(
+            base_url=self.settings.base_url.rstrip("/"),
+            headers=self.headers,
+            timeout=self.settings.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            orders = await self.get_account_orders(client, ACTIVE_ORDER_STATUSES)
+
+        return self.to_display_pending_guard_orders(symbol, orders)
+
+    async def update_position_guard_orders(
+        self,
+        symbol: str,
+        quantity: Decimal,
+        target_order_id: str,
+        stop_order_id: str,
+        take_profit_price: Decimal,
+        stop_loss_price: Decimal,
+        duration: str,
+    ) -> DisplayBracketOrder:
+        if not self.settings.has_tradier_credentials:
+            raise TradierCredentialsMissing("Tradier account ID and API token are not configured.")
+
+        self.validate_bracket_order(quantity, take_profit_price, stop_loss_price)
+
+        async with httpx.AsyncClient(
+            base_url=self.settings.base_url.rstrip("/"),
+            headers=self.headers,
+            timeout=self.settings.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            try:
+                await self.modify_equity_stop_order(
+                    client,
+                    stop_order_id,
+                    stop_loss_price,
+                    duration,
+                )
+            except TradierAPIError as exc:
+                raise TradierAPIError(f"Unable to update stop order {stop_order_id}: {exc}") from exc
+
+            try:
+                await self.modify_equity_limit_order(
+                    client,
+                    target_order_id,
+                    take_profit_price,
+                    duration,
+                )
+            except TradierAPIError as exc:
+                raise TradierAPIError(
+                    f"Updated stop order {stop_order_id}, but target order {target_order_id} failed: {exc}"
+                ) from exc
+
+        side = "sell" if quantity > 0 else "buy_to_cover"
+        return DisplayBracketOrder(
+            symbol=symbol,
+            quantity=format_quantity(abs(quantity)),
+            side=side,
+            take_profit_price=format_money(take_profit_price),
+            stop_loss_price=format_money(stop_loss_price),
+            duration=duration.upper(),
+            order_id=f"{target_order_id}/{stop_order_id}",
+            status="Updated",
+        )
+
     async def add_symbols_to_watchlist(
         self,
         watchlist_id: str,
@@ -577,6 +838,25 @@ class TradierClient:
         if not isinstance(balances, dict):
             raise TradierAPIError("Tradier returned an unexpected balances response.")
         return balances
+
+    async def get_account_orders(
+        self,
+        client: httpx.AsyncClient,
+        statuses: tuple[str, ...],
+    ) -> list[dict[str, Any]]:
+        response = await client.get(
+            f"/accounts/{self.settings.account_id}/orders",
+            params={
+                "status": ",".join(statuses),
+                "limit": 1000,
+                "includeTags": "true",
+            },
+        )
+        data = self.parse_response(response)
+        orders = data.get("orders") or {}
+        if not isinstance(orders, dict):
+            return []
+        return normalize_list(orders.get("order"))
 
     async def get_account_historical_balances(
         self,
@@ -714,6 +994,84 @@ class TradierClient:
             raise TradierAPIError("Tradier returned an unexpected order response.")
         return order
 
+    async def place_oco_equity_order(
+        self,
+        client: httpx.AsyncClient,
+        symbol: str,
+        side: str,
+        quantity: Decimal,
+        take_profit_price: Decimal,
+        stop_loss_price: Decimal,
+        duration: str,
+        preview: bool,
+    ) -> dict[str, Any]:
+        response = await client.post(
+            f"/accounts/{self.settings.account_id}/orders",
+            data={
+                "class": "oco",
+                "duration": duration,
+                "symbol[0]": symbol,
+                "side[0]": side,
+                "quantity[0]": format_quantity(quantity),
+                "type[0]": "limit",
+                "price[0]": format_order_price(take_profit_price),
+                "symbol[1]": symbol,
+                "side[1]": side,
+                "quantity[1]": format_quantity(quantity),
+                "type[1]": "stop",
+                "stop[1]": format_order_price(stop_loss_price),
+                "preview": "true" if preview else "false",
+                "tag": "trade-view-bracket",
+            },
+        )
+        data = self.parse_response(response)
+        order = data.get("order") or data
+        if not isinstance(order, dict):
+            raise TradierAPIError("Tradier returned an unexpected bracket order response.")
+        return order
+
+    async def modify_equity_limit_order(
+        self,
+        client: httpx.AsyncClient,
+        order_id: str,
+        price: Decimal,
+        duration: str,
+    ) -> dict[str, Any]:
+        response = await client.put(
+            f"/accounts/{self.settings.account_id}/orders/{order_id}",
+            data={
+                "type": "limit",
+                "duration": duration,
+                "price": format_order_price(price),
+            },
+        )
+        data = self.parse_response(response)
+        order = data.get("order") or data
+        if not isinstance(order, dict):
+            raise TradierAPIError("Tradier returned an unexpected target update response.")
+        return order
+
+    async def modify_equity_stop_order(
+        self,
+        client: httpx.AsyncClient,
+        order_id: str,
+        stop_price: Decimal,
+        duration: str,
+    ) -> dict[str, Any]:
+        response = await client.put(
+            f"/accounts/{self.settings.account_id}/orders/{order_id}",
+            data={
+                "type": "stop",
+                "duration": duration,
+                "stop": format_order_price(stop_price),
+            },
+        )
+        data = self.parse_response(response)
+        order = data.get("order") or data
+        if not isinstance(order, dict):
+            raise TradierAPIError("Tradier returned an unexpected stop update response.")
+        return order
+
     def calculate_equity_quantity(
         self,
         account_value: Decimal | None,
@@ -731,6 +1089,21 @@ class TradierClient:
             raise TradierOrderSizingError("Position size is too small to buy at least one whole share.")
 
         return quantity, target_notional
+
+    def validate_bracket_order(
+        self,
+        quantity: Decimal,
+        take_profit_price: Decimal,
+        stop_loss_price: Decimal,
+    ) -> None:
+        if quantity == 0:
+            raise TradierOrderSizingError("Unable to protect a position with zero shares.")
+        if take_profit_price <= 0 or stop_loss_price <= 0:
+            raise TradierOrderSizingError("Bracket prices must be greater than zero.")
+        if quantity > 0 and take_profit_price <= stop_loss_price:
+            raise TradierOrderSizingError("For a long position, the profit target must be above the stop loss.")
+        if quantity < 0 and take_profit_price >= stop_loss_price:
+            raise TradierOrderSizingError("For a short position, the profit target must be below the stop loss.")
 
     def parse_response(self, response: httpx.Response) -> dict[str, Any]:
         try:
@@ -843,6 +1216,142 @@ class TradierClient:
             value=value,
             value_display=format_money(value),
         )
+
+    def to_display_account_balance_metrics(
+        self,
+        balances: dict[str, Any],
+    ) -> list[DisplayAccountBalanceMetric]:
+        return [
+            DisplayAccountBalanceMetric(
+                label=label,
+                value=format_money(first_decimal_for_paths(balances, paths)),
+                detail=detail,
+            )
+            for label, paths, detail in ACCOUNT_BALANCE_METRIC_DEFINITIONS
+        ]
+
+    def to_display_pending_guard_orders(
+        self,
+        symbol: str,
+        orders: list[dict[str, Any]],
+    ) -> list[DisplayPendingGuardOrder]:
+        normalized_symbol = symbol.upper()
+        guard_orders: list[DisplayPendingGuardOrder] = []
+
+        for order in orders:
+            for leg in self.flatten_order_legs(order):
+                leg_symbol = str(leg.get("symbol") or "").upper()
+                if leg_symbol != normalized_symbol:
+                    continue
+
+                status = str(leg.get("status") or "").lower()
+                side = str(leg.get("side") or "").lower()
+                order_type = str(leg.get("type") or "").lower()
+                if status not in ACTIVE_ORDER_STATUSES or side not in EXIT_ORDER_SIDES:
+                    continue
+
+                kind = ""
+                price = None
+                if order_type == "limit":
+                    kind = "target"
+                    price = to_decimal(leg.get("price"))
+                elif order_type in {"stop", "stop_limit"}:
+                    kind = "stop"
+                    price = (
+                        to_decimal(leg.get("stop"))
+                        or to_decimal(leg.get("stop_price"))
+                        or to_decimal(leg.get("price"))
+                    )
+
+                if not kind or price is None:
+                    continue
+
+                guard_orders.append(
+                    DisplayPendingGuardOrder(
+                        label="Pending Target" if kind == "target" else "Pending Stop",
+                        kind=kind,
+                        symbol=leg_symbol,
+                        quantity=format_quantity(to_decimal(leg.get("quantity"))),
+                        side=side,
+                        price=format_money(price),
+                        price_value=float(price),
+                        order_id=str(
+                            leg.get("id")
+                            or leg.get("order_id")
+                            or leg.get("parent_id")
+                            or leg.get("oco_id")
+                            or "--"
+                        ),
+                        status=status.replace("_", " ").title(),
+                        duration=str(leg.get("duration") or "").upper() or "--",
+                    )
+                )
+
+        return sorted(guard_orders, key=lambda order: (order.kind, order.price_value))
+
+    def flatten_order_legs(self, order: dict[str, Any]) -> list[dict[str, Any]]:
+        legs = self.indexed_order_legs(order)
+        if legs:
+            return legs
+
+        flattened: list[dict[str, Any]] = []
+
+        def walk(value: Any, parent: dict[str, Any]) -> None:
+            if isinstance(value, list):
+                for item in value:
+                    walk(item, parent)
+                return
+
+            if not isinstance(value, dict):
+                return
+
+            scalar_fields = {
+                key: field_value
+                for key, field_value in value.items()
+                if not isinstance(field_value, (dict, list))
+            }
+            current = {**parent, **scalar_fields}
+            if current.get("symbol") and current.get("type") and current.get("side"):
+                flattened.append(current)
+
+            for key in ("leg", "legs", "order", "orders"):
+                nested = value.get(key)
+                if nested is None:
+                    continue
+                if isinstance(nested, dict) and key in {"legs", "orders"}:
+                    walk(nested.get("leg") or nested.get("order") or nested, current)
+                else:
+                    walk(nested, current)
+
+        walk(order, {})
+        return flattened
+
+    def indexed_order_legs(self, order: dict[str, Any]) -> list[dict[str, Any]]:
+        legs = []
+        for index in range(4):
+            symbol = order.get(f"symbol[{index}]")
+            side = order.get(f"side[{index}]")
+            quantity = order.get(f"quantity[{index}]")
+            order_type = order.get(f"type[{index}]")
+            if not any((symbol, side, quantity, order_type)):
+                continue
+
+            legs.append(
+                {
+                    "symbol": symbol,
+                    "side": side,
+                    "quantity": quantity,
+                    "type": order_type,
+                    "price": order.get(f"price[{index}]"),
+                    "stop": order.get(f"stop[{index}]"),
+                    "stop_price": order.get(f"stop_price[{index}]"),
+                    "status": order.get("status"),
+                    "duration": order.get("duration"),
+                    "id": order.get("id") or order.get("order_id"),
+                    "parent_id": order.get("parent_id") or order.get("oco_id"),
+                }
+            )
+        return legs
 
     def to_display_historical_price_point(
         self,

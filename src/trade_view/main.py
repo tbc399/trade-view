@@ -21,9 +21,12 @@ from trade_view.auth import (
 )
 from trade_view.config import get_settings
 from trade_view.tradier import (
+    DisplayAccountBalanceMetric,
+    DisplayBracketOrder,
     DisplayHistoricalBalancePoint,
     DisplayHistoricalCandlePoint,
     DisplayHistoricalPricePoint,
+    DisplayPendingGuardOrder,
     DisplayPosition,
     PlacedEquityOrder,
     PreviewedEquityOrder,
@@ -221,9 +224,26 @@ def candle_chart_data(
 def candle_chart_meta(
     position: DisplayPosition | None,
     points: list[DisplayHistoricalCandlePoint],
-) -> dict[str, float | str | None]:
+    pending_guard_orders: list[DisplayPendingGuardOrder] | None = None,
+) -> dict:
+    meta = {
+        "pending_guard_orders": [
+            {
+                "label": order.label,
+                "kind": order.kind,
+                "price": order.price_value,
+                "price_display": order.price,
+                "quantity": order.quantity,
+                "status": order.status,
+                "order_id": order.order_id,
+                "duration": order.duration,
+            }
+            for order in pending_guard_orders or []
+        ],
+    }
+
     if position is None or position.entry_price_value is None:
-        return {}
+        return meta
 
     acquired_date = to_date(position.acquired_date_value)
     marker_date = None
@@ -242,12 +262,15 @@ def candle_chart_meta(
             None,
         )
 
-    return {
-        "entry_price": position.entry_price_value,
-        "entry_price_display": position.entry_price,
-        "entry_date": position.acquired_date_value,
-        "entry_marker_date": marker_date,
-    }
+    meta.update(
+        {
+            "entry_price": position.entry_price_value,
+            "entry_price_display": position.entry_price,
+            "entry_date": position.acquired_date_value,
+            "entry_marker_date": marker_date,
+        }
+    )
+    return meta
 
 
 def subtract_months(value: date, months: int) -> date:
@@ -340,6 +363,13 @@ def find_position(positions: list[DisplayPosition], symbol: str) -> DisplayPosit
     )
 
 
+def find_pending_guard_order(
+    orders: list[DisplayPendingGuardOrder],
+    kind: str,
+) -> DisplayPendingGuardOrder | None:
+    return next((order for order in orders if order.kind == kind), None)
+
+
 def page_context(
     request: Request,
     section_key: str,
@@ -351,6 +381,8 @@ def page_context(
     benchmark_symbol: str = "SPY",
     benchmark_error: str = "",
     performance_points: list[dict[str, float | str]] | None = None,
+    account_metrics: list[DisplayAccountBalanceMetric] | None = None,
+    account_balances_error: str = "",
     watchlists: list | None = None,
     watchlists_error: str = "",
     watchlists_message: str = "",
@@ -387,6 +419,8 @@ def page_context(
         "benchmark_symbol": benchmark_symbol,
         "benchmark_error": benchmark_error,
         "performance_chart_data": performance_points or [],
+        "account_metrics": account_metrics or [],
+        "account_balances_error": account_balances_error,
         "account_return": account_return_summary(
             historical_balance_points,
             historical_balance_period,
@@ -537,11 +571,16 @@ async def overview_context(
     benchmark_symbol = (settings.benchmark_symbol or "SPY").strip().upper()
     benchmark_error = ""
     performance_points = []
+    account_metrics = []
+    account_balances_error = ""
     watchlists = []
     watchlists_error = ""
 
     async def load_positions():
         return await TradierClient(settings).get_positions()
+
+    async def load_account_metrics():
+        return await TradierClient(settings).get_account_balance_metrics()
 
     async def load_watchlists():
         return await TradierClient(settings).get_watchlists()
@@ -549,8 +588,14 @@ async def overview_context(
     async def load_historical_balances():
         return await TradierClient(settings).get_historical_balances(historical_balance_period)
 
-    positions_result, watchlists_result, historical_balance_result = await asyncio.gather(
+    (
+        positions_result,
+        account_metrics_result,
+        watchlists_result,
+        historical_balance_result,
+    ) = await asyncio.gather(
         load_positions(),
+        load_account_metrics(),
         load_watchlists(),
         load_historical_balances(),
         return_exceptions=True,
@@ -564,6 +609,17 @@ async def overview_context(
         positions_error = "Unable to load Tradier positions right now."
     else:
         positions = positions_result
+
+    if isinstance(account_metrics_result, TradierCredentialsMissing):
+        account_balances_error = (
+            "Add TRADIER_ACCOUNT_ID and TRADIER_API_TOKEN to load account balances."
+        )
+    elif isinstance(account_metrics_result, TradierAPIError):
+        account_balances_error = str(account_metrics_result)
+    elif isinstance(account_metrics_result, Exception):
+        account_balances_error = "Unable to load Tradier account balances right now."
+    else:
+        account_metrics = account_metrics_result
 
     if isinstance(watchlists_result, TradierCredentialsMissing):
         watchlists_error = "Add TRADIER_API_TOKEN to load live watchlists."
@@ -655,6 +711,8 @@ async def overview_context(
         benchmark_symbol=benchmark_symbol,
         benchmark_error=benchmark_error,
         performance_points=performance_points,
+        account_metrics=account_metrics,
+        account_balances_error=account_balances_error,
         watchlists=watchlists[:3],
         watchlists_error=watchlists_error,
     )
@@ -700,6 +758,8 @@ async def position_detail_context(request: Request, symbol: str) -> dict:
     positions_error = ""
     candle_points = []
     candle_error = ""
+    pending_guard_orders = []
+    pending_guard_orders_error = ""
     end_date = current_market_date()
     start_date = subtract_months(end_date, 6)
 
@@ -730,6 +790,15 @@ async def position_detail_context(request: Request, symbol: str) -> dict:
     except Exception:
         candle_error = f"Unable to load {symbol} candle history right now."
 
+    try:
+        pending_guard_orders = await TradierClient(settings).get_pending_guard_orders(symbol)
+    except TradierCredentialsMissing:
+        pending_guard_orders_error = "Add TRADIER_ACCOUNT_ID and TRADIER_API_TOKEN to load pending guard orders."
+    except TradierAPIError as exc:
+        pending_guard_orders_error = str(exc)
+    except Exception:
+        pending_guard_orders_error = f"Unable to load pending {symbol} guard orders right now."
+
     context = page_context(
         request,
         "positions",
@@ -743,10 +812,14 @@ async def position_detail_context(request: Request, symbol: str) -> dict:
             "position": position,
             "position_symbol": symbol,
             "candle_chart_data": candle_chart_data(candle_points),
-            "candle_chart_meta": candle_chart_meta(position, candle_points),
+            "candle_chart_meta": candle_chart_meta(position, candle_points, pending_guard_orders),
             "candle_error": candle_error,
             "candle_start_date": start_date.isoformat(),
             "candle_end_date": end_date.isoformat(),
+            "pending_guard_orders": pending_guard_orders,
+            "pending_guard_orders_error": pending_guard_orders_error,
+            "pending_target_order": find_pending_guard_order(pending_guard_orders, "target"),
+            "pending_stop_order": find_pending_guard_order(pending_guard_orders, "stop"),
         }
     )
     return context
@@ -818,6 +891,28 @@ def parse_order_quantity(value: str) -> Decimal:
     if quantity <= 0:
         raise ValueError("Order quantity must be greater than zero.")
     return quantity
+
+
+def parse_order_price(value: str, label: str) -> Decimal:
+    normalized_value = value.strip().replace("$", "").replace(",", "")
+    price = to_decimal_or_error(normalized_value, f"Enter a valid {label.lower()} price.")
+    if price <= 0:
+        raise ValueError(f"{label} must be greater than zero.")
+    return price.quantize(Decimal("0.01"))
+
+
+def parse_order_duration(value: str) -> str:
+    duration = value.strip().lower()
+    if duration not in {"day", "gtc"}:
+        raise ValueError("Choose day or GTC duration.")
+    return duration
+
+
+def parse_order_id(value: str, label: str) -> str:
+    order_id = value.strip()
+    if not order_id.isdigit():
+        raise ValueError(f"Missing {label.lower()} order ID.")
+    return order_id
 
 
 def to_decimal_or_error(value: str, message: str) -> Decimal:
@@ -934,6 +1029,159 @@ async def read_position_detail(request: Request, symbol: str):
     except ValueError:
         raise HTTPException(status_code=404, detail="Position not found") from None
     return templates.TemplateResponse(request, "index.html", context)
+
+
+@app.post("/positions/{symbol}/bracket/preview", response_class=HTMLResponse)
+async def preview_position_bracket(request: Request, symbol: str):
+    form = await request.form()
+    bracket_preview: DisplayBracketOrder | None = None
+    bracket_order_error = ""
+
+    try:
+        symbol = parse_symbol(symbol)
+        quantity = parse_position_quantity(str(form.get("quantity") or ""))
+        take_profit_price = parse_order_price(
+            str(form.get("take_profit_price") or ""),
+            "Take profit",
+        )
+        stop_loss_price = parse_order_price(str(form.get("stop_loss_price") or ""), "Stop loss")
+        duration = parse_order_duration(str(form.get("duration") or "gtc"))
+        bracket_preview = await TradierClient(get_settings()).preview_position_bracket_order(
+            symbol,
+            quantity,
+            take_profit_price,
+            stop_loss_price,
+            duration,
+        )
+    except ValueError as exc:
+        bracket_order_error = str(exc)
+    except TradierCredentialsMissing:
+        bracket_order_error = "Add TRADIER_ACCOUNT_ID and TRADIER_API_TOKEN to your .env file before placing orders."
+    except TradierOrderSizingError as exc:
+        bracket_order_error = str(exc)
+    except TradierAPIError as exc:
+        bracket_order_error = str(exc)
+    except Exception:
+        bracket_order_error = "Unable to preview the Tradier bracket order right now."
+
+    return templates.TemplateResponse(
+        request,
+        "partials/position-bracket-result.html",
+        {
+            "bracket_order_error": bracket_order_error,
+            "bracket_preview": bracket_preview,
+            "bracket_order": None,
+            "bracket_update": None,
+        },
+    )
+
+
+@app.post("/positions/{symbol}/bracket/submit", response_class=HTMLResponse)
+async def submit_position_bracket(request: Request, symbol: str):
+    form = await request.form()
+    bracket_order: DisplayBracketOrder | None = None
+    bracket_order_error = ""
+
+    try:
+        symbol = parse_symbol(symbol)
+        quantity = parse_position_quantity(str(form.get("quantity") or ""))
+        take_profit_price = parse_order_price(
+            str(form.get("take_profit_price") or ""),
+            "Take profit",
+        )
+        stop_loss_price = parse_order_price(str(form.get("stop_loss_price") or ""), "Stop loss")
+        duration = parse_order_duration(str(form.get("duration") or "gtc"))
+        bracket_order = await TradierClient(get_settings()).submit_position_bracket_order(
+            symbol,
+            quantity,
+            take_profit_price,
+            stop_loss_price,
+            duration,
+        )
+    except ValueError as exc:
+        bracket_order_error = str(exc)
+    except TradierCredentialsMissing:
+        bracket_order_error = "Add TRADIER_ACCOUNT_ID and TRADIER_API_TOKEN to your .env file before placing orders."
+    except TradierOrderSizingError as exc:
+        bracket_order_error = str(exc)
+    except TradierAPIError as exc:
+        bracket_order_error = str(exc)
+    except Exception:
+        bracket_order_error = "Unable to submit the Tradier bracket order right now."
+
+    return templates.TemplateResponse(
+        request,
+        "partials/position-bracket-result.html",
+        {
+            "bracket_order_error": bracket_order_error,
+            "bracket_preview": None,
+            "bracket_order": bracket_order,
+            "bracket_update": None,
+        },
+    )
+
+
+@app.post("/positions/{symbol}/bracket/update", response_class=HTMLResponse)
+async def update_position_bracket(request: Request, symbol: str):
+    form = await request.form()
+    bracket_update: DisplayBracketOrder | None = None
+    bracket_order_error = ""
+
+    try:
+        symbol = parse_symbol(symbol)
+        quantity = parse_position_quantity(str(form.get("quantity") or ""))
+        target_order_id = parse_order_id(str(form.get("target_order_id") or ""), "Target")
+        stop_order_id = parse_order_id(str(form.get("stop_order_id") or ""), "Stop")
+        take_profit_price = parse_order_price(
+            str(form.get("take_profit_price") or ""),
+            "Take profit",
+        )
+        stop_loss_price = parse_order_price(str(form.get("stop_loss_price") or ""), "Stop loss")
+        duration = parse_order_duration(str(form.get("duration") or "gtc"))
+        bracket_update = await TradierClient(get_settings()).update_position_guard_orders(
+            symbol,
+            quantity,
+            target_order_id,
+            stop_order_id,
+            take_profit_price,
+            stop_loss_price,
+            duration,
+        )
+    except ValueError as exc:
+        bracket_order_error = str(exc)
+    except TradierCredentialsMissing:
+        bracket_order_error = "Add TRADIER_ACCOUNT_ID and TRADIER_API_TOKEN to your .env file before updating orders."
+    except TradierOrderSizingError as exc:
+        bracket_order_error = str(exc)
+    except TradierAPIError as exc:
+        bracket_order_error = str(exc)
+    except Exception:
+        bracket_order_error = "Unable to update the Tradier bracket order right now."
+
+    return templates.TemplateResponse(
+        request,
+        "partials/position-bracket-result.html",
+        {
+            "bracket_order_error": bracket_order_error,
+            "bracket_preview": None,
+            "bracket_order": None,
+            "bracket_update": bracket_update,
+        },
+    )
+
+
+@app.get("/positions/{symbol}/bracket/cancel", response_class=HTMLResponse)
+async def cancel_position_bracket(request: Request, symbol: str):
+    return templates.TemplateResponse(
+        request,
+        "partials/position-bracket-result.html",
+        {
+            "bracket_order_error": "",
+            "bracket_preview": None,
+            "bracket_order": None,
+            "bracket_update": None,
+        },
+    )
 
 
 @app.post("/positions/entry", response_class=HTMLResponse)

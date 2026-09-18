@@ -1,0 +1,80 @@
+{% if bracket_order_error %}
+  <div class="alert alert-error border border-error/30 shadow-sm">
+    <span>{{ bracket_order_error }}</span>
+  </div>
+{% elif bracket_preview %}
+  <div class="rounded-box border border-base-300 bg-base-200 p-4">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <div class="badge badge-primary badge-outline mb-3">Bracket preview</div>
+        <h3 class="text-base font-semibold">
+          OCO exit for {{ bracket_preview.quantity }} shares of {{ bracket_preview.symbol }}
+        </h3>
+        <p class="mt-1 text-sm text-base-content/60">
+          Tradier accepted the preview. Submit to place both guard orders.
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          class="btn btn-ghost btn-square btn-sm"
+          type="button"
+          hx-get="/positions/{{ bracket_preview.symbol }}/bracket/cancel"
+          hx-target="#position-bracket-result"
+          hx-swap="innerHTML"
+          aria-label="Cancel bracket preview"
+          title="Cancel preview"
+        >
+          <svg class="h-4 w-4" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12"></path>
+          </svg>
+        </button>
+        <form
+          hx-post="/positions/{{ bracket_preview.symbol }}/bracket/submit"
+          hx-target="#position-bracket-result"
+          hx-swap="innerHTML"
+          hx-confirm="Submit this OCO bracket order?"
+        >
+          <input type="hidden" name="quantity" value="{% if bracket_preview.side == 'buy_to_cover' %}-{% endif %}{{ bracket_preview.quantity }}">
+          <input type="hidden" name="take_profit_price" value="{{ bracket_preview.take_profit_price | replace('$', '') | replace(',', '') }}">
+          <input type="hidden" name="stop_loss_price" value="{{ bracket_preview.stop_loss_price | replace('$', '') | replace(',', '') }}">
+          <input type="hidden" name="duration" value="{{ bracket_preview.duration | lower }}">
+          <button class="btn btn-primary" type="submit">Submit Bracket</button>
+        </form>
+      </div>
+    </div>
+    <div class="mt-4 grid gap-3 text-sm md:grid-cols-4">
+      <div class="rounded-box border border-base-300 bg-base-100 p-3">
+        <div class="text-base-content/55">Take Profit</div>
+        <div class="font-mono font-semibold">{{ bracket_preview.take_profit_price }}</div>
+      </div>
+      <div class="rounded-box border border-base-300 bg-base-100 p-3">
+        <div class="text-base-content/55">Stop Loss</div>
+        <div class="font-mono font-semibold">{{ bracket_preview.stop_loss_price }}</div>
+      </div>
+      <div class="rounded-box border border-base-300 bg-base-100 p-3">
+        <div class="text-base-content/55">Duration</div>
+        <div class="font-mono font-semibold">{{ bracket_preview.duration }}</div>
+      </div>
+      <div class="rounded-box border border-base-300 bg-base-100 p-3">
+        <div class="text-base-content/55">Preview Status</div>
+        <div class="font-mono font-semibold">{{ bracket_preview.status }}</div>
+      </div>
+    </div>
+  </div>
+{% elif bracket_order %}
+  <div class="alert alert-success border border-success/30 shadow-sm">
+    <span>
+      Submitted an OCO bracket for {{ bracket_order.quantity }} shares of {{ bracket_order.symbol }}:
+      take profit at {{ bracket_order.take_profit_price }} and stop loss at {{ bracket_order.stop_loss_price }}.
+      Order {{ bracket_order.order_id }} is {{ bracket_order.status }}.
+    </span>
+  </div>
+{% elif bracket_update %}
+  <div class="alert alert-success border border-success/30 shadow-sm">
+    <span>
+      Updated the OCO guard orders for {{ bracket_update.quantity }} shares of {{ bracket_update.symbol }}:
+      take profit at {{ bracket_update.take_profit_price }} and stop loss at {{ bracket_update.stop_loss_price }}.
+      Orders {{ bracket_update.order_id }} are {{ bracket_update.status | lower }}.
+    </span>
+  </div>
+{% endif %}

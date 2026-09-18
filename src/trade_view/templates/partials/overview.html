@@ -32,6 +32,31 @@
     </div>
   {% endif %}
 
+  {% if account_balances_error %}
+    <div class="alert alert-warning border border-warning/30 shadow-sm">
+      <span>{{ account_balances_error }}</span>
+    </div>
+  {% elif account_metrics %}
+    <section class="rounded-box border border-base-300 bg-base-100 p-5 shadow-sm lg:p-6">
+      <div class="mb-5 flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 class="text-base font-semibold">Account Snapshot</h2>
+          <p class="text-sm text-base-content/60">Equity, cash, and buying power from Tradier.</p>
+        </div>
+      </div>
+
+      <div class="grid gap-px overflow-hidden rounded-box border border-base-300 bg-base-300 sm:grid-cols-2 xl:grid-cols-3">
+        {% for metric in account_metrics %}
+          <div class="bg-base-100 p-4">
+            <div class="text-sm text-base-content/60">{{ metric.label }}</div>
+            <div class="mt-1 font-mono text-2xl font-semibold">{{ metric.value }}</div>
+            <div class="mt-1 text-xs text-base-content/50">{{ metric.detail }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
   <section class="card border border-base-300 bg-base-100 shadow-sm">
     <div class="card-body gap-5">
       <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
