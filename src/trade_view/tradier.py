@@ -738,7 +738,6 @@ class TradierClient:
                     client,
                     stop_order_id,
                     stop_loss_price,
-                    duration,
                 )
             except TradierAPIError as exc:
                 raise TradierAPIError(f"Unable to update stop order {stop_order_id}: {exc}") from exc
@@ -748,7 +747,6 @@ class TradierClient:
                     client,
                     target_order_id,
                     take_profit_price,
-                    duration,
                 )
             except TradierAPIError as exc:
                 raise TradierAPIError(
@@ -1035,13 +1033,10 @@ class TradierClient:
         client: httpx.AsyncClient,
         order_id: str,
         price: Decimal,
-        duration: str,
     ) -> dict[str, Any]:
         response = await client.put(
             f"/accounts/{self.settings.account_id}/orders/{order_id}",
             data={
-                "type": "limit",
-                "duration": duration,
                 "price": format_order_price(price),
             },
         )
@@ -1056,13 +1051,10 @@ class TradierClient:
         client: httpx.AsyncClient,
         order_id: str,
         stop_price: Decimal,
-        duration: str,
     ) -> dict[str, Any]:
         response = await client.put(
             f"/accounts/{self.settings.account_id}/orders/{order_id}",
             data={
-                "type": "stop",
-                "duration": duration,
                 "stop": format_order_price(stop_price),
             },
         )
